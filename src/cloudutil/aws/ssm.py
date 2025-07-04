@@ -1,11 +1,11 @@
 """AWS SSM (Systems Manager) Parameter Store utilities."""
 
-import subprocess
-import boto3
 from typing import List, Optional
 from pydantic import BaseModel
 
 from rich.console import Console
+from cloudutil.aws.common import get_aws_client
+from cloudutil.helper import fzf_select
 
 console = Console()
 
@@ -21,14 +21,7 @@ def get_ssm_client(
     profile_name: Optional[str] = None, region_name: Optional[str] = None
 ):
     """Get SSM client with optional profile and region."""
-    session_kwargs = {}
-    if profile_name:
-        session_kwargs["profile_name"] = profile_name
-    if region_name:
-        session_kwargs["region_name"] = region_name
-
-    session = boto3.Session(**session_kwargs)
-    return session.client("ssm")
+    return get_aws_client("ssm", profile_name, region_name)
 
 
 def list_parameters(
@@ -121,30 +114,12 @@ def search_parameters_with_fzf(
     )
 
     # Use fzf for fuzzy selection
-    try:
-        fzf = subprocess.run(
-            ["fzf", "-m", "-e"],
-            input="\n".join(parameters),
-            text=True,
-            capture_output=True,
-        )
-        selected = fzf.stdout.strip().splitlines()
-
-        if not selected or len(selected) == 0:
-            console.print("[yellow][!] No selection made.[/yellow]")
-            return []
-
-        console.print(f"[*] Retrieving {len(selected)} selected parameters...")
-        params = [get_parameter(name, profile_name, region_name) for name in selected]
-        console.print("[green][+][/green] Parameters retrieved successfully.")
-
-        return params
-
-    except FileNotFoundError:
-        console.print(
-            "[bold red][!] ERROR: fzf not found. Please install fzf for interactive parameter selection.[/bold red]"
-        )
+    selected = fzf_select(parameters, "parameter")
+    if not selected:
         return []
-    except subprocess.CalledProcessError as e:
-        console.print(f"[bold red][!] ERROR: fzf selection failed: {e}[/bold red]")
-        return []
+
+    console.print(f"[*] Retrieving {len(selected)} selected parameters...")
+    params = [get_parameter(name, profile_name, region_name) for name in selected]
+    console.print("[green][+][/green] Parameters retrieved successfully.")
+
+    return params

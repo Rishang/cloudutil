@@ -10,9 +10,9 @@ from rich.console import Console
 
 from cloudutil.aws.login import generate_federated_console_url
 from cloudutil.aws.ssm import search_parameters_with_fzf
+from cloudutil.aws.secrets import search_secrets_with_fzf
 
 app = typer.Typer(
-    help="AWS utilities including console login and SSM parameter management.",
     pretty_exceptions_enable=False,
 )
 
@@ -143,18 +143,66 @@ def aws_ssm(
 
 
 @app.command()
+def aws_secrets(
+    name_filter: Optional[str] = typer.Option(
+        None, "--filter", help="Filter secrets by name prefix"
+    ),
+    profile: Optional[str] = typer.Option(
+        None, "--profile", "-p", help="AWS CLI profile name to use."
+    ),
+    region: Optional[str] = typer.Option(
+        None, "--region", "-r", help="AWS region to use."
+    ),
+):
+    """
+    Search Secrets Manager secrets interactively using fzf for selection.
+    """
+    try:
+        secrets = search_secrets_with_fzf(
+            name_filter=name_filter, profile_name=profile, region_name=region
+        )
+
+        if not secrets:
+            raise typer.Exit(code=1)
+
+        for secret in secrets:
+            try:
+                parsed_value = json.loads(secret.value)
+                console.print(f"Name: '{secret.name}'")
+                if secret.description:
+                    console.print(f"Description: '{secret.description}'")
+                console.print(f"ARN: '{secret.arn}'")
+                console.print("Value (JSON):")
+                console.print(json.dumps(parsed_value, indent=2))
+                console.print("-" * 80)
+                console.print()
+            except json.JSONDecodeError:
+                console.print(
+                    f"[yellow][!] Warning: Could not parse secret '{secret.name}' as JSON, showing raw value[/yellow]"
+                )
+                console.print(secret.model_dump_json(indent=2))
+                console.print("-" * 80)
+                console.print()
+
+    except Exception as e:
+        console.print(f"[bold red][!] ERROR: {e}[/bold red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def help():
     """Show help information."""
     console.print("[bold]CloudUtil - AWS utilities[/bold]")
     console.print("\nAvailable commands:")
     console.print(
-        "  [cyan]aws-login[/cyan]   - Generate and open AWS console login URL"
+        "  [cyan]aws-login[/cyan]     - Generate and open AWS console login URL"
     )
     console.print(
-        "  [cyan]ssm-search[/cyan]  - Search SSM parameters interactively with fzf"
+        "  [cyan]aws-ssm[/cyan]       - Search SSM parameters interactively with fzf"
     )
-    console.print("  [cyan]ssm-list[/cyan]    - List SSM parameter names by prefix")
-    console.print("  [cyan]ssm-get[/cyan]     - Get a specific SSM parameter")
+    console.print(
+        "  [cyan]aws-secrets[/cyan]   - Search Secrets Manager secrets interactively with fzf"
+    )
     console.print(
         "\nUse 'cloudutil <command> --help' for detailed command information."
     )
