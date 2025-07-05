@@ -9,8 +9,13 @@ import typer
 from rich.console import Console
 
 from cloudutil.aws.login import generate_federated_console_url
-from cloudutil.aws.ssm import search_parameters_with_fzf
+from cloudutil.aws.ssm import (
+    search_parameters_with_fzf,
+    list_ssm_instances,
+    ssm_instance,
+)
 from cloudutil.aws.secrets import search_secrets_with_fzf
+from cloudutil.helper import fzf_select
 
 app = typer.Typer(
     pretty_exceptions_enable=False,
@@ -114,7 +119,7 @@ def aws_login(
 
 
 @app.command()
-def aws_ssm(
+def aws_ssm_parameters(
     prefix: str = typer.Option("/", "--prefix", help="SSM path prefix to search"),
     profile: Optional[str] = typer.Option(
         None, "--profile", "-p", help="AWS CLI profile name to use."
@@ -140,6 +145,34 @@ def aws_ssm(
     except Exception as e:
         console.print(f"[bold red][!] ERROR: {e}[/bold red]")
         raise typer.Exit(code=1)
+
+
+@app.command()
+def aws_ssm_instance(
+    tunnel: bool = typer.Option(False, "--tunnel", help="Tunnel to the instance"),
+    remote_host: str = typer.Option(
+        "", "--remote-host", help="Remote host to tunnel to"
+    ),
+    remote_port: int = typer.Option(
+        0, "--remote-port", help="Remote port to tunnel to"
+    ),
+    local_port: int = typer.Option(0, "--local-port", help="Local port to tunnel to"),
+):
+    instances = [
+        f"{instance['instance_id']} | {instance['name']}"
+        for instance in list_ssm_instances()
+    ]
+    selected = fzf_select(instances, "instance", multi_select=False)
+    if not selected:
+        raise typer.Exit(code=1)
+    instance_id = selected[0].split(" | ")[0]
+    ssm_instance(
+        instance_id=instance_id,
+        tunnel=tunnel,
+        remote_host=remote_host,
+        remote_port=remote_port,
+        local_port=local_port,
+    )
 
 
 @app.command()

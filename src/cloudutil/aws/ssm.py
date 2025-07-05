@@ -1,7 +1,8 @@
 """AWS SSM (Systems Manager) Parameter Store utilities."""
 
-from typing import List, Optional
+import os
 from pydantic import BaseModel
+from typing import List, Optional
 
 from rich.console import Console
 from cloudutil.aws.common import get_aws_client
@@ -123,3 +124,49 @@ def search_parameters_with_fzf(
     console.print("[green][+][/green] Parameters retrieved successfully.")
 
     return params
+
+
+def ssm_instance(
+    instance_id: str,
+    tunnel: bool = False,
+    document_name: str = "AWS-StartPortForwardingSessionToRemoteHost",
+    remote_host: str = "",
+    remote_port: int = 0,
+    local_port: int = 0,
+):
+    if tunnel:
+        if remote_host == "" or remote_port == 0 or local_port == 0:
+            console.print(
+                "[bold red][!] ERROR: Remote host, remote port, and local port are required for tunneling.[/bold red]"
+            )
+            return
+
+        os.system(f"""aws ssm start-session --target {instance_id} \
+                --document-name {document_name} \
+                --parameters '{{'host': ['{remote_host}'], 'portNumber': ['{remote_port}'], 'localPortNumber': ['{local_port}']}}'""")
+
+    else:
+        os.system(f"aws ssm start-session --target {instance_id}")
+
+
+def list_ssm_instances() -> List[dict[str, str]]:
+    ec2 = get_aws_client("ec2")
+    response = ec2.describe_instances(
+        Filters=[
+            {"Name": "tag:Name", "Values": ["*"]},
+        ]
+    )
+    instances = []
+    for reservation in response["Reservations"]:
+        for instance in reservation["Instances"]:
+            # Only include instances with IAM roles
+            if "IamInstanceProfile" not in instance:
+                continue
+
+            name = ""
+            for tag in instance["Tags"]:
+                if tag["Key"] == "Name":
+                    name = tag["Value"]
+                    break
+            instances.append({"instance_id": instance["InstanceId"], "name": name})
+    return instances

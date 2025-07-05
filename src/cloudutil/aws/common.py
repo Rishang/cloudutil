@@ -31,7 +31,7 @@ def get_aws_client(
     service_name: str,
     profile_name: Optional[str] = None,
     region_name: Optional[str] = None,
-) -> object:
+):
     """
     Get AWS service client with optional profile and region.
 
