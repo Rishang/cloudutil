@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+import os
+from tempfile import TemporaryDirectory
 from rich.console import Console
 
 from cloudutil.aws.login import generate_federated_console_url
@@ -14,6 +16,8 @@ from cloudutil.aws.ssm import (
     list_ssm_instances,
     ssm_instance,
 )
+from cloudutil.aws.sts import decode_authorization_failure_message
+
 from cloudutil.aws.secrets import search_secrets_with_fzf
 from cloudutil.helper import fzf_select
 
@@ -221,6 +225,25 @@ def aws_secrets(
         console.print(f"[bold red][!] ERROR: {e}[/bold red]")
         raise typer.Exit(code=1)
 
+@app.command()
+def aws_decode_message():
+    """
+    Decode an AWS authorization failure message using IAM's decode_authorization_message API.
+    """
+
+    # create a temporary directory to store the encoded message
+    with TemporaryDirectory() as tempdir:
+        temp_path = Path(tempdir) / "encoded_message.txt"
+        os.system(f"vim {temp_path}")
+        encoded_message = temp_path.read_text().strip()
+
+        try:
+            decoded_message = decode_authorization_failure_message(encoded_message)
+            console.print("[bold green]Decoded Message:[/bold green]")
+            console.print(decoded_message)
+        except Exception as e:
+            console.print(f"[bold red][!] ERROR: {e}[/bold red]")
+            raise typer.Exit(code=1)
 
 @app.command()
 def help():
