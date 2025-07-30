@@ -94,7 +94,7 @@ def aws_login(
     if console_url:
         if no_open:
             console.print("\n[bold yellow]Generated Console Login URL:[/bold yellow]")
-            console.print(console_url)
+            print(console_url)
             console.print(
                 "\n[italic]Copy and paste the above URL into your browser.[/italic]"
             )
