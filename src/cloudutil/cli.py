@@ -226,7 +226,7 @@ def aws_secrets(
         raise typer.Exit(code=1)
 
 @app.command()
-def aws_decode_message(message: Optional[str] = typer.Argument(..., help="Encoded authorization failure message")):
+def aws_decode_message(message: Optional[str] = typer.Option(None, help="Encoded authorization failure message")):
     """
     Decode an AWS authorization failure message using IAM's decode_authorization_message API.
     """
