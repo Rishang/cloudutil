@@ -226,7 +226,7 @@ def aws_secrets(
         raise typer.Exit(code=1)
 
 @app.command()
-def aws_decode_message():
+def aws_decode_message(message: Optional[str] = typer.Argument(..., help="Encoded authorization failure message")):
     """
     Decode an AWS authorization failure message using IAM's decode_authorization_message API.
     """
@@ -234,13 +234,18 @@ def aws_decode_message():
     # create a temporary directory to store the encoded message
     with TemporaryDirectory() as tempdir:
         temp_path = Path(tempdir) / "encoded_message.txt"
-        os.system(f"vim {temp_path}")
-        encoded_message = temp_path.read_text().strip()
+        if not isinstance(message, str):
+            os.system(f"vim {temp_path}")
+            encoded_message = temp_path.read_text().strip()
+        else:
+            encoded_message = message.strip()
 
         try:
             decoded_message = decode_authorization_failure_message(encoded_message)
-            console.print("[bold green]Decoded Message:[/bold green]")
-            console.print(decoded_message)
+            if isinstance(message, str):
+                print(decoded_message)
+            else:
+                console.print(decoded_message)
         except Exception as e:
             console.print(f"[bold red][!] ERROR: {e}[/bold red]")
             raise typer.Exit(code=1)
