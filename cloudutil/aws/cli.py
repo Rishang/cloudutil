@@ -68,12 +68,16 @@ def login(
     """
     Generates an AWS console login URL using STS GetFederationToken and opens it.
     """
+    if policy_file is None:
+        print("No policy file provided, use -f <policy_file>.json")
+        raise typer.Exit(code=1)
+
     boto_sess = boto3.session.Session()
     try:
         region = boto_sess.region_name
     except Exception:
         region = "us-east-1"
-    
+
     policy_doc = None
     destination = f"https://{region}.console.aws.amazon.com/"
 
