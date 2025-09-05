@@ -68,16 +68,16 @@ Generate a temporary AWS console login URL with optional policy restrictions:
 
 ```bash
 # Basic console login
-cloudutil aws-login
+cu aws login
 
 # With custom profile and region
-cloudutil aws-login --profile my-profile --region us-west-2
+cu aws login --profile my-profile --region us-west-2
 
 # With custom duration and policy file
-cloudutil aws-login --duration 3600 --policy-file ./read-only-policy.json
+cu aws login --duration 3600 --policy-file ./read-only-policy.json
 
 # Just print URL (don't open browser)
-cloudutil aws-login --no-open
+cu aws login --no-open
 ```
 
 **Example output:**
@@ -92,13 +92,13 @@ Interactively search and retrieve SSM parameters:
 
 ```bash
 # Search all parameters
-cloudutil aws-ssm-parameters
+cu aws ssm-parameters
 
 # Search with prefix
-cloudutil aws-ssm-parameters --prefix /app/production/
+cu aws ssm-parameters --prefix /app/production/
 
 # With specific profile and region
-cloudutil aws-ssm-parameters --prefix /app/ --profile prod --region eu-west-1
+cu aws ssm-parameters --prefix /app/ --profile prod --region eu-west-1
 ```
 
 **Example workflow:**
@@ -124,10 +124,10 @@ Connect to EC2 instances through Systems Manager:
 
 ```bash
 # Interactive instance selection and direct connection
-cloudutil aws-ssm-instance
+cu aws ec2-ssm
 
 # Port forwarding tunnel
-cloudutil aws-ssm-instance --tunnel --remote-host localhost --remote-port 5432 --local-port 5432
+cu aws ec2-ssm --tunnel --remote-host localhost --remote-port 5432 --local-port 5432
 ```
 
 **Example workflow:**
@@ -143,13 +143,13 @@ Browse and retrieve secrets with automatic JSON parsing:
 
 ```bash
 # Search all secrets
-cloudutil aws-secrets
+cu aws secrets
 
 # Filter by name prefix
-cloudutil aws-secrets --filter "prod/"
+cu aws secrets --filter "prod/"
 
 # With specific profile and region
-cloudutil aws-secrets --filter "app/" --profile production --region us-east-1
+cu aws secrets --filter "app/" --profile production --region us-east-1
 ```
 
 **Example output:**
@@ -167,6 +167,42 @@ Value (JSON):
   "password": "super-secure-password",
   "host": "prod-db.example.com",
   "port": 5432
+}
+```
+
+### Decode Authorization Message
+
+Decode an AWS authorization failure message using IAM's `decode_authorization_message` API:
+
+```bash
+# Decode a message interactively (opens vim)
+cu aws decode-message
+
+# Decode a specific message
+cu aws decode-message --message "AQAA...<encoded message>..."
+```
+
+**Example output:**
+```
+{
+  "allowed_actions": [],
+  "denied_actions": [
+    {
+      "actions": ["s3:GetObject"],
+      "api_call": "GetObject",
+      "main_type": "s3",
+      "condition": {},
+      "resource": "arn:aws:s3:::my-bucket/*",
+      "type": "s3",
+      "condition_text": "",
+      "effective_action": "s3:GetObject",
+      "reason": "Access Denied",
+      "encoded_error_message": "Access Denied"
+    }
+  ],
+  "encoded_message": "AQAA...",
+  "decoded_error": "Access Denied",
+  "decoded_message": "The provided authorization message is invalid or has expired."
 }
 ```
 
@@ -188,6 +224,7 @@ Create a JSON policy file to restrict console permissions:
 ```json
 {
   "Version": "2012-10-17",
+| `decode-message` | Decode authorization failure message | `--message` |
   "Statement": [
     {
       "Effect": "Allow",
@@ -212,18 +249,9 @@ CloudUtil respects standard AWS environment variables:
 ```bash
 export AWS_PROFILE=my-profile
 export AWS_DEFAULT_REGION=us-west-2
-cloudutil aws-ssm-parameters  # Uses the environment settings
+cu aws ssm-parameters  # Uses the environment settings
 ```
 
-## 📋 Command Reference
-
-| Command | Description | Key Options |
-|---------|-------------|-------------|
-| `aws-login` | Generate AWS console login URL | `--profile`, `--region`, `--duration`, `--policy-file` |
-| `aws-ssm-parameters` | Search SSM parameters | `--prefix`, `--profile`, `--region` |
-| `aws-ssm-instance` | Connect to SSM instances | `--tunnel`, `--remote-host`, `--remote-port`, `--local-port` |
-| `aws-secrets` | Browse Secrets Manager | `--filter`, `--profile`, `--region` |
-| `help` | Show help information | - |
 
 ## 🔧 Development
 
