@@ -5,8 +5,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from rich.console import Console
-from cloudutil.aws.common import get_aws_client
-from cloudutil.helper import fzf_select
+from .common import get_aws_client
+from ..helper import fzf_select
 
 console = Console()
 

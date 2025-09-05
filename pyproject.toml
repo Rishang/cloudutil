@@ -10,23 +10,20 @@ dependencies = [
     "rich>=13.0.0",
     "requests>=2.28.0",
     "pydantic>=2.11.7",
+    "textual>=6.1.0",
 ]
 
 
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=42"]
 build-backend = "setuptools.build_meta"
 
+[tool.uv]
+package = true
+
 [tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.uv.workspace]
-members = ["."]
-
-[dependency-groups]
-dev = [
-    "types-boto3>=1.39.3",
-]
+include = ["src*"]
 
 [project.scripts]
-cloudutil = "cloudutil.cli:main"
+cu = "src.cli:app"
+cloudutil = "src.cli:app"

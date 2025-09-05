@@ -9,17 +9,18 @@ import typer
 import os
 from tempfile import TemporaryDirectory
 from rich.console import Console
+import boto3
 
-from cloudutil.aws.login import generate_federated_console_url
-from cloudutil.aws.ssm import (
+from .login import generate_federated_console_url
+from .ssm import (
     search_parameters_with_fzf,
     list_ssm_instances,
     ssm_instance,
 )
-from cloudutil.aws.sts import decode_authorization_failure_message
+from .sts import decode_authorization_failure_message
 
-from cloudutil.aws.secrets import search_secrets_with_fzf
-from cloudutil.helper import fzf_select
+from .secrets import search_secrets_with_fzf
+from ..helper import fzf_select
 
 app = typer.Typer(
     pretty_exceptions_enable=False,
@@ -29,7 +30,7 @@ console = Console()
 
 
 @app.command()
-def aws_login(
+def login(
     profile: Optional[str] = typer.Option(
         None, "--profile", "-p", help="AWS CLI profile name to use."
     ),
@@ -83,6 +84,12 @@ def aws_login(
             )
             raise typer.Exit(code=1)
 
+    boto_sess = boto3.session.Session()
+    try:
+        region = boto_sess.region_name
+    except Exception:
+        region = "us-east-1"
+
     console_url = generate_federated_console_url(
         profile_name=profile,
         region_name=region,
@@ -123,7 +130,7 @@ def aws_login(
 
 
 @app.command()
-def aws_ssm_parameters(
+def ssm_parameters(
     prefix: str = typer.Option("/", "--prefix", help="SSM path prefix to search"),
     profile: Optional[str] = typer.Option(
         None, "--profile", "-p", help="AWS CLI profile name to use."
@@ -152,7 +159,7 @@ def aws_ssm_parameters(
 
 
 @app.command()
-def aws_ssm_instance(
+def ec2_ssm(
     tunnel: bool = typer.Option(False, "--tunnel", help="Tunnel to the instance"),
     remote_host: str = typer.Option(
         "", "--remote-host", help="Remote host to tunnel to"
@@ -180,7 +187,7 @@ def aws_ssm_instance(
 
 
 @app.command()
-def aws_secrets(
+def secrets(
     name_filter: Optional[str] = typer.Option(
         None, "--filter", help="Filter secrets by name prefix"
     ),
@@ -225,8 +232,13 @@ def aws_secrets(
         console.print(f"[bold red][!] ERROR: {e}[/bold red]")
         raise typer.Exit(code=1)
 
+
 @app.command()
-def aws_decode_message(message: Optional[str] = typer.Option(None, help="Encoded authorization failure message")):
+def decode_message(
+    message: Optional[str] = typer.Option(
+        None, help="Encoded authorization failure message"
+    ),
+):
     """
     Decode an AWS authorization failure message using IAM's decode_authorization_message API.
     """
@@ -249,24 +261,6 @@ def aws_decode_message(message: Optional[str] = typer.Option(None, help="Encoded
         except Exception as e:
             console.print(f"[bold red][!] ERROR: {e}[/bold red]")
             raise typer.Exit(code=1)
-
-@app.command()
-def help():
-    """Show help information."""
-    console.print("[bold]CloudUtil - AWS utilities[/bold]")
-    console.print("\nAvailable commands:")
-    console.print(
-        "  [cyan]aws-login[/cyan]     - Generate and open AWS console login URL"
-    )
-    console.print(
-        "  [cyan]aws-ssm[/cyan]       - Search SSM parameters interactively with fzf"
-    )
-    console.print(
-        "  [cyan]aws-secrets[/cyan]   - Search Secrets Manager secrets interactively with fzf"
-    )
-    console.print(
-        "\nUse 'cloudutil <command> --help' for detailed command information."
-    )
 
 
 def main():
