@@ -22,8 +22,8 @@ build-backend = "setuptools.build_meta"
 package = true
 
 [tool.setuptools.packages.find]
-include = ["src*"]
+include = ["cloudutil*"]
 
 [project.scripts]
-cu = "src.cli:app"
-cloudutil = "src.cli:app"
+cu = "cloudutil.cli:app"
+cloudutil = "cloudutil.cli:app"
