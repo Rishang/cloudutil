@@ -68,6 +68,12 @@ def login(
     """
     Generates an AWS console login URL using STS GetFederationToken and opens it.
     """
+    boto_sess = boto3.session.Session()
+    try:
+        region = boto_sess.region_name
+    except Exception:
+        region = "us-east-1"
+    
     policy_doc = None
     destination = f"https://{region}.console.aws.amazon.com/"
 
@@ -83,12 +89,6 @@ def login(
                 f"[bold red][!] ERROR: Could not read or parse policy file '{policy_file}': {e}[/bold red]"
             )
             raise typer.Exit(code=1)
-
-    boto_sess = boto3.session.Session()
-    try:
-        region = boto_sess.region_name
-    except Exception:
-        region = "us-east-1"
 
     console_url = generate_federated_console_url(
         profile_name=profile,
