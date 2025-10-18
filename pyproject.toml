@@ -28,4 +28,3 @@ include = ["cloudutil*"]
 
 [project.scripts]
 cu = "cloudutil.cli:app"
-cloudutil = "cloudutil.cli:app"
