@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Optional, List, Dict
+from typing import Optional, List
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from cloudutil.utils import resolve_env_variable
 
@@ -72,8 +72,14 @@ class SQLConfig(BaseModel):
     """Complete SQL configuration schema"""
 
     provider: ProviderConfig
-    database: Dict[str, DatabaseConfig]
+    database: List[DatabaseConfig] = Field(default_factory=list)
     users: List[UserConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def normalize_database(self) -> "SQLConfig":
+        """Convert database list to dict for internal use"""
+        self.database = {db.name: db for db in self.database}
+        return self
 
 
 class BaseSQLProvider(ABC):

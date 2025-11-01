@@ -1,0 +1,191 @@
+# SQL Database Configuration Example
+# This file demonstrates all features of the SQL module
+# Use ${ENV_VAR} syntax to reference environment variables for sensitive data
+
+# ============================================================================
+# PROVIDER CONFIGURATION
+# ============================================================================
+provider:
+  name: postgres
+  version: 17
+  host: localhost              # or use ${DB_HOST}
+  port: 5432
+  username: postgres           # or use ${POSTGRES_USER}
+  password: changeme           # or use ${POSTGRES_PASSWORD}
+  cert: null                   # Optional: path to SSL certificate for secure connections
+                               # Example: /etc/ssl/certs/postgres.crt
+
+# ============================================================================
+# DATABASE CONFIGURATION
+# ============================================================================
+database:
+  # Production application database
+  - name: myapp
+    create: true
+    extensions:
+      - name: uuid-ossp          # For UUID generation
+      - name: pgcrypto           # For encryption functions
+      - name: pg_trgm            # For full-text search optimization
+
+  # Analytics database
+  - name: analytics
+    create: true
+    extensions:
+      - name: pg_stat_statements # Query performance monitoring
+
+  # Development database (create: false means it must already exist)
+  - name: legacy_db
+    create: false
+    extensions: []
+
+# ============================================================================
+# USER MANAGEMENT
+# ============================================================================
+users:
+  # Application service account with full read-write access
+  - name: app_service
+    password: ${APP_SERVICE_PASSWORD}  # Set via: export APP_SERVICE_PASSWORD=...
+    privileges:
+      - db: myapp
+        db_schema: public
+        readwrite: true
+        readonly: false
+        tables:
+          - ALL  # Grant access to all tables in public schema
+
+  # Read-only analytics user
+  - name: analytics_user
+    password: ${ANALYTICS_PASSWORD}
+    privileges:
+      - db: myapp
+        db_schema: public
+        readwrite: false
+        readonly: true
+        tables:
+          - ALL  # Read access to all tables
+
+      - db: analytics
+        db_schema: public
+        readwrite: false
+        readonly: true
+        tables:
+          - ALL
+
+  # Audit/logging user with limited write access
+  - name: audit_logger
+    password: ${AUDIT_PASSWORD}
+    privileges:
+      - db: myapp
+        db_schema: public
+        readwrite: true
+        readonly: false
+        tables:
+          - audit_logs    # Can write to specific tables only
+          - events
+
+  # Schema-specific user with restricted access
+  - name: reports_user
+    password: ${REPORTS_PASSWORD}
+    privileges:
+      - db: myapp
+        db_schema: public
+        readwrite: false
+        readonly: true
+        tables:
+          - users
+          - sessions
+          - products
+          - orders
+
+# ============================================================================
+# ENVIRONMENT VARIABLES SETUP
+# ============================================================================
+# Before running, set these environment variables:
+#
+# export POSTGRES_USER=postgres
+# export POSTGRES_PASSWORD=your_admin_password
+# export DB_HOST=prod-db.example.com
+# export APP_SERVICE_PASSWORD=app_service_password
+# export ANALYTICS_PASSWORD=analytics_password
+# export AUDIT_PASSWORD=audit_password
+# export REPORTS_PASSWORD=reports_password
+#
+# Then execute:
+# cu sql validate example.yaml
+# cu sql execute --config-file example.yaml
+
+# ============================================================================
+# KUBERNETES DEPLOYMENT EXAMPLE
+# ============================================================================
+# You can use this configuration in Kubernetes with a ConfigMap and Secret:
+#
+# apiVersion: v1
+# kind: ConfigMap
+# metadata:
+#   name: sql-config
+# data:
+#   config.yaml: |
+#     (contents of this file)
+#
+# ---
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: sql-secrets
+# type: Opaque
+# stringData:
+#   POSTGRES_PASSWORD: your-password
+#   APP_SERVICE_PASSWORD: app-password
+#   ANALYTICS_PASSWORD: analytics-password
+#   AUDIT_PASSWORD: audit-password
+#   REPORTS_PASSWORD: reports-password
+#
+# ---
+# apiVersion: batch/v1
+# kind: Job
+# metadata:
+#   name: sql-setup
+# spec:
+#   template:
+#     spec:
+#       serviceAccountName: sql-setup-sa
+#       containers:
+#       - name: sql-setup
+#         image: cloudutil:latest
+#         command: ["cu", "sql", "execute", "--config-file", "/config/config.yaml"]
+#         env:
+#         - name: POSTGRES_PASSWORD
+#           valueFrom:
+#             secretKeyRef:
+#               name: sql-secrets
+#               key: POSTGRES_PASSWORD
+#         - name: APP_SERVICE_PASSWORD
+#           valueFrom:
+#             secretKeyRef:
+#               name: sql-secrets
+#               key: APP_SERVICE_PASSWORD
+#         - name: ANALYTICS_PASSWORD
+#           valueFrom:
+#             secretKeyRef:
+#               name: sql-secrets
+#               key: ANALYTICS_PASSWORD
+#         - name: AUDIT_PASSWORD
+#           valueFrom:
+#             secretKeyRef:
+#               name: sql-secrets
+#               key: AUDIT_PASSWORD
+#         - name: REPORTS_PASSWORD
+#           valueFrom:
+#             secretKeyRef:
+#               name: sql-secrets
+#               key: REPORTS_PASSWORD
+#         - name: DB_HOST
+#           value: "postgres-service.database"
+#         volumeMounts:
+#         - name: config
+#           mountPath: /config
+#       volumes:
+#       - name: config
+#         configMap:
+#           name: sql-config
+#       restartPolicy: Never

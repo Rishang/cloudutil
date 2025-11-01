@@ -1,5 +1,7 @@
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict
+from dataclasses import dataclass
+from contextlib import contextmanager
 
 import psycopg2
 from psycopg2 import sql
@@ -16,367 +18,285 @@ from .base import (
 )
 
 
+@dataclass
+class ChangeReport:
+    """Tracks what changed during execution"""
+    operation: str  # 'create', 'update', 'skip'
+    resource_type: str
+    resource_name: str
+    details: Dict = None
+    
+    def __str__(self) -> str:
+        if self.operation == 'create':
+            return f"[CREATE] {self.resource_type}: {self.resource_name}"
+        if self.operation == 'skip':
+            return f"[SKIP] {self.resource_type}: {self.resource_name}"
+        if self.operation == 'update':
+            changes = ', '.join([f"{k}: {v['old']} → {v['new']}" for k, v in (self.details or {}).items()])
+            return f"[UPDATE] {self.resource_type}: {self.resource_name} ({changes})"
+        return f"[{self.operation.upper()}] {self.resource_type}: {self.resource_name}"
+
+
 class PostgreSQLProvider(BaseSQLProvider):
-    """PostgreSQL provider implementation"""
+    """PostgreSQL provider with check-first pattern"""
 
     def __init__(self, config: SQLConfig):
         super().__init__(config)
-        self._master_connection = None
-        self._db_connection = None
+        self._conn = None
         self.conn_params = None
+        self.changes: List[ChangeReport] = []
 
     def connect(self) -> None:
-        """Establish connection to PostgreSQL server"""
-        try:
-            self.conn_params = {
-                "host": self.config.provider.host,
-                "port": self.config.provider.port,
-                "user": self.config.provider.username,
-                "password": self.config.provider.password,
-            }
+        """Connect to PostgreSQL"""
+        self.conn_params = {
+            "host": self.config.provider.host,
+            "port": self.config.provider.port,
+            "user": self.config.provider.username,
+            "password": self.config.provider.password,
+        }
+        if self.config.provider.cert:
+            self.conn_params["sslmode"] = "verify-full"
+            self.conn_params["sslrootcert"] = self.config.provider.cert
 
-            # Add SSL cert if provided
-            if self.config.provider.cert:
-                self.conn_params["sslmode"] = "verify-full"
-                self.conn_params["sslrootcert"] = self.config.provider.cert
-
-            # Connect to default 'postgres' database for admin operations
-            self._master_connection = psycopg2.connect(
-                **self.conn_params, database="postgres"
-            )
-            self._master_connection.autocommit = True
-
-            logger.info(
-                f"Connected to PostgreSQL at {self.config.provider.host}:{self.config.provider.port}"
-            )
-        except ImportError:
-            raise ImportError(
-                "psycopg2-binary is required for PostgreSQL. Install it with: pip install psycopg2-binary"
-            )
-        except Exception as e:
-            raise ConnectionError(f"Failed to connect to PostgreSQL: {e}")
+        self._conn = psycopg2.connect(**self.conn_params, database="postgres")
+        self._conn.autocommit = True
+        logger.info(f"Connected to {self.config.provider.host}:{self.config.provider.port}")
 
     def disconnect(self) -> None:
-        """Close PostgreSQL connections"""
-        if self._db_connection:
-            self._db_connection.close()
-            self._db_connection = None
+        """Disconnect from PostgreSQL"""
+        if self._conn:
+            self._conn.close()
+            self._conn = None
 
-        if self._master_connection:
-            self._master_connection.close()
-            self._master_connection = None
-            logger.info("Disconnected from PostgreSQL")
+    @contextmanager
+    def _db_conn(self, db_name: str):
+        """Temporary connection to specific database"""
+        conn = psycopg2.connect(**self.conn_params, database=db_name)
+        conn.autocommit = True
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def _log(self, operation: str, resource_type: str, resource_name: str, details: Dict = None):
+        """Track and log a change"""
+        change = ChangeReport(operation, resource_type, resource_name, details)
+        self.changes.append(change)
+        logger.info(str(change))
+
+    # =========================================================================
+    # DATABASE
+    # =========================================================================
 
     def create_database(self, db_config: DatabaseConfig) -> None:
-        """Create a PostgreSQL database if not exists, alter if exists"""
+        """Create or update database"""
         if not db_config.create:
-            logger.info(
-                f"Skipping database creation for '{db_config.name}' (create=false)"
-            )
             return
 
-        try:
-            cursor = self._master_connection.cursor()
-
-            # Check if database exists
-            cursor.execute(
-                "SELECT 1 FROM pg_database WHERE datname = %s", (db_config.name,)
-            )
-
-            if cursor.fetchone():
-                logger.info(f"Database '{db_config.name}' already exists")
-
-                # Alter database settings if needed
-                cursor.execute(
-                    sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
-                        sql.Identifier(db_config.name),
-                        sql.Identifier(self.config.provider.username),
-                    )
-                )
-                logger.debug(
-                    f"Altered database '{db_config.name}' owner to '{self.config.provider.username}'"
-                )
+        cursor = self._conn.cursor()
+        
+        # Check if exists
+        cursor.execute("SELECT rolname FROM pg_roles WHERE oid = (SELECT datdba FROM pg_database WHERE datname = %s)", 
+                      (db_config.name,))
+        result = cursor.fetchone()
+        
+        if result:
+            # Database exists
+            current_owner = result[0]
+            expected_owner = self.config.provider.username
+            
+            if current_owner != expected_owner:
+                cursor.execute(sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
+                    sql.Identifier(db_config.name), sql.Identifier(expected_owner)))
+                self._log('update', 'database', db_config.name, 
+                         {'owner': {'old': current_owner, 'new': expected_owner}})
             else:
-                # Create database
-                cursor.execute(
-                    sql.SQL("CREATE DATABASE {} OWNER {}").format(
-                        sql.Identifier(db_config.name),
-                        sql.Identifier(self.config.provider.username),
-                    )
-                )
-                logger.info(f"Created database '{db_config.name}'")
+                self._log('skip', 'database', db_config.name)
+        else:
+            # Create database
+            cursor.execute(sql.SQL("CREATE DATABASE {} OWNER {}").format(
+                sql.Identifier(db_config.name), sql.Identifier(self.config.provider.username)))
+            self._log('create', 'database', db_config.name)
+        
+        cursor.close()
 
-            cursor.close()
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to create/alter database '{db_config.name}': {e}"
-            )
+    # =========================================================================
+    # EXTENSIONS
+    # =========================================================================
 
-    def install_extensions(
-        self, db_name: str, extensions: List[ExtensionConfig]
-    ) -> None:
-        """Install PostgreSQL extensions if not exists"""
+    def install_extensions(self, db_name: str, extensions: List[ExtensionConfig]) -> None:
+        """Install or update extensions"""
         if not extensions:
             return
 
-        try:
-            # Connect to the specific database
-            db_conn = psycopg2.connect(**self.conn_params, database=db_name)
-            db_conn.autocommit = True
-            cursor = db_conn.cursor()
-
+        with self._db_conn(db_name) as conn:
             for ext in extensions:
-                try:
-                    # Check if extension exists
-                    cursor.execute(
-                        "SELECT 1 FROM pg_extension WHERE extname = %s", (ext.name,)
-                    )
+                cursor = conn.cursor()
+                
+                # Check if exists
+                cursor.execute("SELECT 1 FROM pg_extension WHERE extname = %s", (ext.name,))
+                exists = cursor.fetchone() is not None
+                
+                if exists:
+                    try:
+                        cursor.execute(sql.SQL("ALTER EXTENSION {} UPDATE").format(sql.Identifier(ext.name)))
+                        self._log('update', 'extension', f"{db_name}.{ext.name}")
+                    except:
+                        self._log('skip', 'extension', f"{db_name}.{ext.name}")
+                else:
+                    cursor.execute(sql.SQL("CREATE EXTENSION {}").format(sql.Identifier(ext.name)))
+                    self._log('create', 'extension', f"{db_name}.{ext.name}")
+                
+                cursor.close()
 
-                    if cursor.fetchone():
-                        logger.info(
-                            f"Extension '{ext.name}' already exists in database '{db_name}'"
-                        )
-                        # Optionally update extension to latest version
-                        cursor.execute(
-                            sql.SQL("ALTER EXTENSION {} UPDATE").format(
-                                sql.Identifier(ext.name)
-                            )
-                        )
-                        logger.debug(
-                            f"Updated extension '{ext.name}' to latest version"
-                        )
-                    else:
-                        cursor.execute(
-                            sql.SQL("CREATE EXTENSION IF NOT EXISTS {}").format(
-                                sql.Identifier(ext.name)
-                            )
-                        )
-                        logger.info(
-                            f"Installed extension '{ext.name}' in database '{db_name}'"
-                        )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to install/update extension '{ext.name}': {e}"
-                    )
-
-            cursor.close()
-            db_conn.close()
-        except Exception as e:
-            raise RuntimeError(f"Failed to manage extensions in '{db_name}': {e}")
+    # =========================================================================
+    # USERS
+    # =========================================================================
 
     def create_user(self, user_config: UserConfig) -> None:
-        """Create a PostgreSQL user if not exists, alter password if exists"""
-        try:
-            cursor = self._master_connection.cursor()
+        """Create or update user"""
+        cursor = self._conn.cursor()
+        
+        # Check if exists
+        cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (user_config.name,))
+        exists = cursor.fetchone() is not None
+        
+        if exists:
+            cursor.execute(sql.SQL("ALTER USER {} WITH PASSWORD %s").format(
+                sql.Identifier(user_config.name)), (user_config.password,))
+            self._log('update', 'user', user_config.name, {'password': {'old': '***', 'new': '***'}})
+        else:
+            cursor.execute(sql.SQL("CREATE USER {} WITH PASSWORD %s").format(
+                sql.Identifier(user_config.name)), (user_config.password,))
+            self._log('create', 'user', user_config.name)
+        
+        cursor.close()
 
-            # Check if user exists
-            cursor.execute(
-                "SELECT 1 FROM pg_roles WHERE rolname = %s", (user_config.name,)
-            )
-
-            if cursor.fetchone():
-                logger.info(f"User '{user_config.name}' already exists")
-
-                # Alter user password
-                cursor.execute(
-                    sql.SQL("ALTER USER {} WITH PASSWORD %s").format(
-                        sql.Identifier(user_config.name)
-                    ),
-                    (user_config.password,),
-                )
-                logger.debug(f"Updated password for user '{user_config.name}'")
-            else:
-                # Create user with password
-                cursor.execute(
-                    sql.SQL("CREATE USER {} WITH PASSWORD %s").format(
-                        sql.Identifier(user_config.name)
-                    ),
-                    (user_config.password,),
-                )
-                logger.info(f"Created user '{user_config.name}'")
-
-            cursor.close()
-        except Exception as e:
-            raise RuntimeError(f"Failed to create/alter user '{user_config.name}': {e}")
+    # =========================================================================
+    # PRIVILEGES
+    # =========================================================================
 
     def grant_privileges(self, user_name: str, privilege: PrivilegeConfig) -> None:
-        """Grant privileges to a PostgreSQL user"""
-        try:
-            # Connect to the specific database
-            db_conn = psycopg2.connect(**self.conn_params, database=privilege.db)
-            db_conn.autocommit = True
-            cursor = db_conn.cursor()
-
-            # Grant database connection privilege
-            cursor.execute(
-                sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
-                    sql.Identifier(privilege.db), sql.Identifier(user_name)
-                )
-            )
-            logger.debug(
-                f"Granted CONNECT on database '{privilege.db}' to '{user_name}'"
-            )
-
-            # Grant schema usage and create privileges
-            cursor.execute(
-                sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
-                    sql.Identifier(privilege.db_schema), sql.Identifier(user_name)
-                )
-            )
-            logger.debug(
-                f"Granted USAGE on schema '{privilege.db_schema}' to '{user_name}'"
-            )
-
-            # Grant CREATE privilege on schema if user has readwrite access
+        """Grant privileges to user"""
+        with self._db_conn(privilege.db) as conn:
+            cursor = conn.cursor()
+            
+            # Database and schema access
+            cursor.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                sql.Identifier(privilege.db), sql.Identifier(user_name)))
+            cursor.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+                sql.Identifier(privilege.db_schema), sql.Identifier(user_name)))
+            
             if privilege.readwrite:
-                cursor.execute(
-                    sql.SQL("GRANT CREATE ON SCHEMA {} TO {}").format(
-                        sql.Identifier(privilege.db_schema), sql.Identifier(user_name)
-                    )
-                )
-                logger.debug(
-                    f"Granted CREATE on schema '{privilege.db_schema}' to '{user_name}'"
-                )
-
-            # Handle table privileges
+                cursor.execute(sql.SQL("GRANT CREATE ON SCHEMA {} TO {}").format(
+                    sql.Identifier(privilege.db_schema), sql.Identifier(user_name)))
+            
+            # Table privileges
+            schema = sql.Identifier(privilege.db_schema)
+            user = sql.Identifier(user_name)
+            
             if privilege.tables and "ALL" in privilege.tables:
-                # Grant on all tables
                 if privilege.readwrite:
-                    cursor.execute(
-                        sql.SQL(
-                            "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {} TO {}"
-                        ).format(
-                            sql.Identifier(privilege.db_schema),
-                            sql.Identifier(user_name),
-                        )
-                    )
-                    cursor.execute(
-                        sql.SQL(
-                            "ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {}"
-                        ).format(
-                            sql.Identifier(privilege.db_schema),
-                            sql.Identifier(user_name),
-                        )
-                    )
-                    logger.info(
-                        f"Granted READ/WRITE on all tables in {privilege.db}.{privilege.db_schema} to '{user_name}'"
-                    )
+                    cursor.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {} TO {}").format(schema, user))
+                    cursor.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {}").format(schema, user))
+                    access = "READ/WRITE (ALL)"
                 elif privilege.readonly:
-                    cursor.execute(
-                        sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA {} TO {}").format(
-                            sql.Identifier(privilege.db_schema),
-                            sql.Identifier(user_name),
-                        )
-                    )
-                    cursor.execute(
-                        sql.SQL(
-                            "ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO {}"
-                        ).format(
-                            sql.Identifier(privilege.db_schema),
-                            sql.Identifier(user_name),
-                        )
-                    )
-                    logger.info(
-                        f"Granted READ-ONLY on all tables in {privilege.db}.{privilege.db_schema} to '{user_name}'"
-                    )
+                    cursor.execute(sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA {} TO {}").format(schema, user))
+                    cursor.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO {}").format(schema, user))
+                    access = "READ-ONLY (ALL)"
             else:
-                # Grant on specific tables
                 for table in privilege.tables:
                     if privilege.readwrite:
-                        cursor.execute(
-                            sql.SQL(
-                                "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {}.{} TO {}"
-                            ).format(
-                                sql.Identifier(privilege.db_schema),
-                                sql.Identifier(table),
-                                sql.Identifier(user_name),
-                            )
-                        )
-                        logger.info(
-                            f"Granted READ/WRITE on {privilege.db}.{privilege.db_schema}.{table} to '{user_name}'"
-                        )
-
+                        cursor.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {}.{} TO {}").format(
+                            schema, sql.Identifier(table), user))
                     elif privilege.readonly:
-                        cursor.execute(
-                            sql.SQL("GRANT SELECT ON TABLE {}.{} TO {}").format(
-                                sql.Identifier(privilege.db_schema),
-                                sql.Identifier(table),
-                                sql.Identifier(user_name),
-                            )
-                        )
-                        logger.info(
-                            f"Granted READ-ONLY on {privilege.db}.{privilege.db_schema}.{table} to '{user_name}'"
-                        )
-
+                        cursor.execute(sql.SQL("GRANT SELECT ON TABLE {}.{} TO {}").format(
+                            schema, sql.Identifier(table), user))
+                access = f"{'READ/WRITE' if privilege.readwrite else 'READ-ONLY'} ({len(privilege.tables)} tables)"
+            
             cursor.close()
-            db_conn.close()
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to grant privileges to '{user_name}' on '{privilege.db}': {e}"
-            )
+            self._log('create', 'privilege', f"{user_name}@{privilege.db}.{privilege.db_schema}", {'access': access})
+
+    # =========================================================================
+    # EXECUTE
+    # =========================================================================
 
     def execute(self) -> None:
-        """Execute all PostgreSQL configurations"""
-        logger.info("Starting PostgreSQL Configuration")
+        """Execute all configurations"""
+        self.changes = []
+        logger.info("Starting PostgreSQL Configuration\n")
 
-        # Step 1: Create databases
-        logger.info("Creating/Altering Databases")
-        for db_name, db_config in self.config.database.items():
-            self.create_database(db_config)
+        # Databases
+        logger.info("=" * 60)
+        logger.info("Databases")
+        logger.info("=" * 60)
+        for db in self.config.database.values():
+            self.create_database(db)
 
-        # Step 2: Install extensions
-        logger.info("Installing/Updating Extensions")
-        for db_name, db_config in self.config.database.items():
-            if db_config.extensions:
-                self.install_extensions(db_config.name, db_config.extensions)
+        # Extensions
+        logger.info("\n" + "=" * 60)
+        logger.info("Extensions")
+        logger.info("=" * 60)
+        for db in self.config.database.values():
+            if db.extensions:
+                self.install_extensions(db.name, db.extensions)
 
-        # Step 3: Create users
-        logger.info("Creating/Updating Users")
+        # Users
+        logger.info("\n" + "=" * 60)
+        logger.info("Users")
+        logger.info("=" * 60)
         for user in self.config.users:
             self.create_user(user)
 
-        # Step 4: Grant privileges
-        logger.info("Granting Privileges")
+        # Privileges
+        logger.info("\n" + "=" * 60)
+        logger.info("Privileges")
+        logger.info("=" * 60)
         for user in self.config.users:
-            for privilege in user.privileges:
-                self.grant_privileges(user.name, privilege)
+            for priv in user.privileges:
+                self.grant_privileges(user.name, priv)
 
-        logger.info("PostgreSQL Configuration Complete")
+        # Summary
+        creates = sum(1 for c in self.changes if c.operation == 'create')
+        updates = sum(1 for c in self.changes if c.operation == 'update')
+        skips = sum(1 for c in self.changes if c.operation == 'skip')
 
+        logger.info("\n" + "=" * 60)
+        logger.info("Summary")
+        logger.info("=" * 60)
+        logger.info(f"Total: {len(self.changes)} | Created: {creates} | Updated: {updates} | Skipped: {skips}")
+        logger.info("Complete")
+
+
+# =============================================================================
+# BUILDER
+# =============================================================================
 
 class PostgreSQLBuilder:
-    """Builder pattern for PostgreSQL provider"""
+    """Builder for PostgreSQL provider"""
 
     def __init__(self):
         self._config: Optional[SQLConfig] = None
 
     def from_dict(self, config_dict: dict) -> "PostgreSQLBuilder":
-        """Build from dictionary"""
         self._config = SQLConfig(**config_dict)
         return self
 
     def from_yaml(self, yaml_path: str | Path) -> "PostgreSQLBuilder":
-        """Build from YAML file"""
         path = Path(yaml_path)
-
         if not path.exists():
             raise FileNotFoundError(f"YAML file not found: {yaml_path}")
-
+        
         with open(path, "r") as f:
             config_dict = yaml.safe_load(f)
-
+        
         return self.from_dict(config_dict)
 
     def from_yaml_string(self, yaml_string: str) -> "PostgreSQLBuilder":
-        """Build from YAML string"""
         config_dict = yaml.safe_load(yaml_string)
         return self.from_dict(config_dict)
 
     def build(self) -> PostgreSQLProvider:
-        """Build the PostgreSQL provider"""
         if self._config is None:
-            raise ValueError(
-                "Configuration not set. Use from_dict(), from_yaml(), or from_yaml_string() first."
-            )
-
+            raise ValueError("Configuration not set")
         return PostgreSQLProvider(self._config)
