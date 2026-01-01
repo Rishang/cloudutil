@@ -18,6 +18,8 @@ A powerful CLI wrapper for daily AWS cloud operations with interactive selection
     - [SSM Parameter Management](#ssm-parameter-management)
     - [SSM Instance Connections](#ssm-instance-connections)
     - [Secrets Manager](#secrets-manager)
+    - [Azure Key Vault Secrets](#azure-key-vault-secrets)
+    - [Decode Authorization Message](#decode-authorization-message)
   - [🎯 Interactive Selection](#-interactive-selection)
   - [🛠️ Advanced Usage](#️-advanced-usage)
     - [Custom Policy for Console Login](#custom-policy-for-console-login)
@@ -46,6 +48,7 @@ pip install -U git+https://github.com/Rishang/cloudutil.git
 
 - Python 3.8+
 - AWS CLI configured with credentials
+- Azure CLI (`az login` must be run primarily)
 - `fzf` for interactive selection
 - [AWS Session Manager Plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
 
@@ -158,6 +161,7 @@ cu aws secrets --filter "app/" --profile production --region us-east-1
 [*] Retrieving 2 selected secrets...
 [+] Secrets retrieved successfully.
 
+
 Name: 'prod/database/credentials'
 Description: 'Production database credentials'
 ARN: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/database/credentials-AbCdEf'
@@ -168,6 +172,32 @@ Value (JSON):
   "host": "prod-db.example.com",
   "port": 5432
 }
+```
+
+### Azure Key Vault Secrets
+
+Browse and retrieve Azure Key Vault secrets with automatic JSON parsing (similar to AWS Secrets Manager):
+
+```bash
+# Search all secrets in a vault
+cu azure secrets --vault my-key-vault
+
+# Filter by name prefix
+cu azure secrets --vault my-key-vault --filter "prod-"
+```
+
+**Example output:**
+```
+[*] Listing secrets from vault my-key-vault with filter: prod-
+[*] Found 5 secrets. Opening fzf for selection...
+[*] Retrieving 1 selected secrets...
+[+] Secrets retrieved successfully.
+
+Name: 'prod-db-password'
+Content Type: 'password'
+ID: 'https://my-key-vault.vault.azure.net/secrets/prod-db-password/...'
+Value:
+super-secret-value
 ```
 
 ### Decode Authorization Message

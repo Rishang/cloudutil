@@ -13,6 +13,8 @@ dependencies = [
     "textual>=6.1.0",
     "pyyaml>=6.0.0",
     "psycopg2-binary>=2.9.9",
+    "azure-identity>=1.15.0",
+    "azure-keyvault-secrets>=4.8.0",
 ]
 
 
