@@ -41,12 +41,12 @@ def login(
         help="AWS region for STS client (e.g., us-east-1). STS is global, but client can be regional.",
     ),
     duration: int = typer.Option(
-        7200,
+        2,
         "--duration",
         "-d",
-        min=900,
-        max=43200,
-        help="Duration for temporary credentials in seconds (900-43200).",
+        min=1,
+        max=24,
+        help="Duration for temporary credentials in hours (1-24).",
     ),
     policy_file: Optional[Path] = typer.Option(
         None,
@@ -97,7 +97,7 @@ def login(
     console_url = generate_federated_console_url(
         profile_name=profile,
         region_name=region,
-        duration_seconds=duration,
+        duration_seconds=duration * 3600,
         policy_document=policy_doc,
         destination_url=destination,
     )
