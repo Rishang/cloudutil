@@ -4,64 +4,75 @@ import json
 from typing import Optional
 
 import typer
-from rich.console import Console
+from ..utils import pprint
 
-from .secrets import search_secrets_with_fzf
+from ..helper import fzf_select
+from .secrets import get_secret, list_secrets
 
 app = typer.Typer(
     pretty_exceptions_enable=False,
 )
 
-console = Console()
-
 
 @app.command()
 def secrets(
-    vault: str = typer.Option(
-        ..., "--vault", "-v", help="Name of the Azure Key Vault"
-    ),
+    vault: str = typer.Option(..., "--vault", "-v", help="Name of the Azure Key Vault"),
     name_filter: Optional[str] = typer.Option(
         None, "--filter", help="Filter secrets by name prefix"
+    ),
+    output: str = typer.Option(
+        "text", "--output", "-o", help="Output format (text/json)"
     ),
 ):
     """
     Search Key Vault secrets interactively using fzf for selection.
     """
     try:
-        secrets = search_secrets_with_fzf(
-            vault_name=vault,
-            name_filter=name_filter,
-        )
+        if output.lower() != "json":
+            pprint(
+                f"[*] Listing secrets from vault [bold cyan]{vault}[/bold cyan]"
+                + (
+                    f" with filter: [bold cyan]{name_filter}[/bold cyan]"
+                    if name_filter
+                    else ""
+                )
+            )
 
-        if not secrets:
+        secret_names = list_secrets(vault, name_filter)
+
+        if not secret_names:
+            if output.lower() != "json":
+                pprint("[yellow][!] No secrets found.[/yellow]")
             raise typer.Exit(code=1)
 
-        for secret in secrets:
+        if output.lower() != "json":
+            pprint(
+                f"[*] Found {len(secret_names)} secrets. Opening fzf for selection..."
+            )
+
+        selected_names = fzf_select(
+            secret_names, "secret", quiet=(output.lower() == "json")
+        )
+
+        if not selected_names:
+            raise typer.Exit(code=1)
+
+        if output.lower() != "json":
+            pprint(f"[*] Retrieving {len(selected_names)} selected secrets...")
+
+        secrets = []
+        for name in selected_names:
             try:
-                # Try to parse as JSON if it looks like JSON
-                parsed_value = json.loads(secret.value)
-                console.print(f"Name: '{secret.name}'")
-                if secret.description:
-                    console.print(f"Content Type: '{secret.description}'")
-                console.print(f"ID: '{secret.id}'")
-                console.print("Value (JSON):")
-                console.print(json.dumps(parsed_value, indent=2))
-                console.print("-" * 80)
-                console.print()
-            except json.JSONDecodeError:
-                console.print(
-                    f"[yellow][!] Warning: Could not parse secret '{secret.name}' as JSON, showing raw value[/yellow]"
+                secrets.append(get_secret(vault, name))
+            except Exception as e:
+                pprint(
+                    f"[bold red][!] ERROR: Failed to retrieve secret {name}: {e}[/bold red]"
                 )
-                # If not JSON, just show the secret model dump or value
-                console.print(f"Name: '{secret.name}'")
-                if secret.description:
-                    console.print(f"Content Type: '{secret.description}'")
-                console.print(f"ID: '{secret.id}'")
-                console.print("Value:")
-                console.print(secret.value)
-                console.print("-" * 80)
-                console.print()
+
+        pprint(json.dumps([s.dict() for s in secrets], indent=2, default=str))
+
+        pprint("[green][+][/green] Secrets retrieved successfully.")
 
     except Exception as e:
-        console.print(f"[bold red][!] ERROR: {e}[/bold red]")
+        pprint(f"[bold red][!] ERROR: {e}[/bold red]")
         raise typer.Exit(code=1)

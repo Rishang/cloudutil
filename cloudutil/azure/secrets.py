@@ -1,16 +1,10 @@
 """Azure Key Vault secrets utilities."""
 
-import json
 from typing import List, Optional
 
 from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
 from pydantic import BaseModel
-from rich.console import Console
-
-from ..helper import fzf_select
-
-console = Console()
 
 
 class Secret(BaseModel):
@@ -74,56 +68,5 @@ def get_secret(vault_name: str, name: str) -> Secret:
         value=secret_bundle.value,
         id=secret_bundle.id,
         # Azure defines content_type, not description usually, but we can map if needed or leave empty
-        description=secret_bundle.content_type,
+        description=secret_bundle.properties.content_type,
     )
-
-
-def search_secrets_with_fzf(
-    vault_name: str,
-    name_filter: Optional[str] = None,
-) -> List[Secret]:
-    """
-    Search secrets using fzf for interactive selection.
-
-    Args:
-        vault_name: Name of the Key Vault
-        name_filter: Filter secrets by name prefix
-
-    Returns:
-        List of selected Secret objects
-    """
-    console.print(
-        f"[*] Listing secrets from vault [bold cyan]{vault_name}[/bold cyan]"
-        + (f" with filter: [bold cyan]{name_filter}[/bold cyan]" if name_filter else "")
-    )
-
-    try:
-        secrets = list_secrets(vault_name, name_filter)
-    except Exception as e:
-        console.print(f"[bold red][!] ERROR: Failed to list secrets: {e}[/bold red]")
-        return []
-
-    if not secrets:
-        console.print("[yellow][!] No secrets found.[/yellow]")
-        return []
-
-    console.print(f"[*] Found {len(secrets)} secrets. Opening fzf for selection...")
-
-    selected = fzf_select(secrets, "secret")
-    if not selected:
-        return []
-
-    console.print(f"[*] Retrieving {len(selected)} selected secrets...")
-    secret_objects = []
-
-    for name in selected:
-        try:
-            secret_objects.append(get_secret(vault_name, name))
-        except Exception as e:
-            console.print(
-                f"[bold red][!] ERROR: Failed to retrieve secret {name}: {e}[/bold red]"
-            )
-
-    console.print("[green][+][/green] Secrets retrieved successfully.")
-
-    return secret_objects

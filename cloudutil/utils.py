@@ -1,7 +1,7 @@
 import logging
 import os
 from rich.logging import RichHandler
-
+from rich import print as pprint
 
 def _logger(flag: str = "", format: str = ""):
     if format == "" or format is None:

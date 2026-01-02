@@ -76,7 +76,10 @@ __all__ = ["ShellRunner", "shell", "fzf_select"]
 
 
 def fzf_select(
-    items: List[str], service_name: str = "item", multi_select: bool = True
+    items: List[str],
+    service_name: str = "item",
+    multi_select: bool = True,
+    quiet: bool = False,
 ) -> List[str]:
     """
     Interactive selection using fzf.
@@ -85,17 +88,20 @@ def fzf_select(
         items: List of items to select from
         service_name: Name of the service/item type for error messages
         multi_select: Whether to allow multiple selections
+        quiet: Whether to suppress status messages
 
     Returns:
         List of selected items (empty list if no selection or error)
     """
     if not items:
-        console.print(f"[yellow][!] No {service_name}s found.[/yellow]")
+        if not quiet:
+            console.print(f"[yellow][!] No {service_name}s found.[/yellow]")
         return []
 
-    console.print(
-        f"[*] Found {len(items)} {service_name}s. Opening fzf for selection..."
-    )
+    if not quiet:
+        console.print(
+            f"[*] Found {len(items)} {service_name}s. Opening fzf for selection..."
+        )
 
     # Build fzf command
     fzf_cmd = ["fzf", "-e"]
@@ -119,7 +125,8 @@ def fzf_select(
     selected = stdout.strip().splitlines()
 
     if not selected or len(selected) == 0:
-        console.print("[yellow][!] No selection made.[/yellow]")
+        if not quiet:
+            console.print("[yellow][!] No selection made.[/yellow]")
         return []
 
     return selected
