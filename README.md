@@ -1,10 +1,15 @@
 # ☁️ CloudUtil
 
-A powerful CLI wrapper for most common AWS and Azure cloud operations with interactive selection and beautiful output.
+CLI `cu` is a wrapper for most common AWS and Azure cloud operations with interactive selection and beautiful output.
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![AWS](https://img.shields.io/badge/AWS-Cloud-orange.svg)](https://aws.amazon.com/)
+[![Azure](https://img.shields.io/badge/Azure-Cloud-blue.svg)](https://azure.microsoft.com/)
+
+```bash
+pip install -U git+https://github.com/Rishang/cloudutil.git
+```
 
 ## 📚 Table of Contents
 
