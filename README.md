@@ -30,6 +30,8 @@ pip install -U git+https://github.com/Rishang/cloudutil.git
         - [Environment Variables](#environment-variables)
     - [Azure Operations](#azure-operations)
       - [Key Vault Secrets](#key-vault-secrets)
+    - [SQL Operations](#sql-operations)
+    - [Kubernetes Operations](#kubernetes-operations)
   - [🎯 Interactive Selection](#-interactive-selection)
   - [📋 Command Reference](#-command-reference)
   - [🔧 Development](#-development)
@@ -44,6 +46,8 @@ pip install -U git+https://github.com/Rishang/cloudutil.git
 - 🎯 **Fuzzy Selection** - Powered by `fzf` for lightning-fast interactive selection
 - 🎨 **Beautiful Output** - Rich terminal interface with colors and formatting
 - ⚡ **Profile & Region Support** - Seamless switching between AWS profiles and regions
+- 🐍 **SQL Database Management** - Simple, type-safe database configuration management for PostgreSQL
+- 🎛️ **Kubernetes Operations** - Simple, type-safe Kubernetes configuration management
 
 ## 📦 Installation
 
@@ -282,6 +286,14 @@ ID: 'https://my-key-vault.vault.azure.net/secrets/prod-db-password/...'
 Value:
 super-secret-value
 ```
+
+### SQL Operations
+
+In progress...
+
+### Kubernetes Operations
+
+In progress...
 
 ## 🎯 Interactive Selection
 
