@@ -1,8 +1,8 @@
 # ☁️ CloudUtil
 
-A powerful CLI wrapper for daily AWS cloud operations with interactive selection and beautiful output.
+A powerful CLI wrapper for most common AWS and Azure cloud operations with interactive selection and beautiful output.
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![AWS](https://img.shields.io/badge/AWS-Cloud-orange.svg)](https://aws.amazon.com/)
 
@@ -14,16 +14,18 @@ A powerful CLI wrapper for daily AWS cloud operations with interactive selection
   - [📦 Installation](#-installation)
     - [Requirements](#requirements)
   - [🚀 Usage](#-usage)
-    - [AWS Console Login](#aws-console-login)
-    - [SSM Parameter Management](#ssm-parameter-management)
-    - [SSM Instance Connections](#ssm-instance-connections)
-    - [Secrets Manager](#secrets-manager)
-    - [Azure Key Vault Secrets](#azure-key-vault-secrets)
-    - [Decode Authorization Message](#decode-authorization-message)
+    - [AWS Operations](#aws-operations)
+      - [Console Login](#console-login)
+      - [SSM Parameter Management](#ssm-parameter-management)
+      - [SSM Instance Connections](#ssm-instance-connections)
+      - [Secrets Manager](#secrets-manager)
+      - [Decode Authorization Message](#decode-authorization-message)
+      - [Advanced AWS Usage](#advanced-aws-usage)
+        - [Custom Policy for Console Login](#custom-policy-for-console-login)
+        - [Environment Variables](#environment-variables)
+    - [Azure Operations](#azure-operations)
+      - [Key Vault Secrets](#key-vault-secrets)
   - [🎯 Interactive Selection](#-interactive-selection)
-  - [🛠️ Advanced Usage](#️-advanced-usage)
-    - [Custom Policy for Console Login](#custom-policy-for-console-login)
-    - [Environment Variables](#environment-variables)
   - [📋 Command Reference](#-command-reference)
   - [🔧 Development](#-development)
     - [Local Development](#local-development)
@@ -65,7 +67,9 @@ sudo apt install fzf
 
 ## 🚀 Usage
 
-### AWS Console Login
+### AWS Operations
+
+#### Console Login
 
 Generate a temporary AWS console login URL with optional policy restrictions:
 
@@ -89,7 +93,7 @@ cu aws login --no-open
 [+] Done. Check your browser.
 ```
 
-### SSM Parameter Management
+#### SSM Parameter Management
 
 Interactively search and retrieve SSM parameters:
 
@@ -121,7 +125,7 @@ cu aws ssm-parameters --prefix /app/ --profile prod --region eu-west-1
 }
 ```
 
-### SSM Instance Connections
+#### SSM Instance Connections
 
 Connect to EC2 instances through Systems Manager:
 
@@ -140,7 +144,7 @@ cu aws ec2-ssm --tunnel --remote-host localhost --remote-port 5432 --local-port 
 # Connects directly to the instance via SSM
 ```
 
-### Secrets Manager
+#### Secrets Manager
 
 Browse and retrieve secrets with automatic JSON parsing:
 
@@ -174,33 +178,7 @@ Value (JSON):
 }
 ```
 
-### Azure Key Vault Secrets
-
-Browse and retrieve Azure Key Vault secrets with automatic JSON parsing (similar to AWS Secrets Manager):
-
-```bash
-# Search all secrets in a vault
-cu azure secrets --vault my-key-vault
-
-# Filter by name prefix
-cu azure secrets --vault my-key-vault --filter "prod-"
-```
-
-**Example output:**
-```
-[*] Listing secrets from vault my-key-vault with filter: prod-
-[*] Found 5 secrets. Opening fzf for selection...
-[*] Retrieving 1 selected secrets...
-[+] Secrets retrieved successfully.
-
-Name: 'prod-db-password'
-Content Type: 'password'
-ID: 'https://my-key-vault.vault.azure.net/secrets/prod-db-password/...'
-Value:
-super-secret-value
-```
-
-### Decode Authorization Message
+#### Decode Authorization Message
 
 Decode an AWS authorization failure message using IAM's `decode_authorization_message` API:
 
@@ -236,25 +214,15 @@ cu aws decode-message --message "AQAA...<encoded message>..."
 }
 ```
 
-## 🎯 Interactive Selection
+#### Advanced AWS Usage
 
-All commands use `fzf` for interactive selection, providing:
-
-- **Fuzzy matching** - Type partial names to filter
-- **Multi-select** - Use `Tab` to select multiple items
-- **Real-time filtering** - Instant results as you type
-- **Keyboard shortcuts** - Standard fzf navigation
-
-## 🛠️ Advanced Usage
-
-### Custom Policy for Console Login
+##### Custom Policy for Console Login
 
 Create a JSON policy file to restrict console permissions:
 
 ```json
 {
   "Version": "2012-10-17",
-| `decode-message` | Decode authorization failure message | `--message` |
   "Statement": [
     {
       "Effect": "Allow",
@@ -272,7 +240,7 @@ Create a JSON policy file to restrict console permissions:
 cloudutil aws-login --policy-file ./s3-read-only.json
 ```
 
-### Environment Variables
+##### Environment Variables
 
 CloudUtil respects standard AWS environment variables:
 
@@ -282,6 +250,44 @@ export AWS_DEFAULT_REGION=us-west-2
 cu aws ssm-parameters  # Uses the environment settings
 ```
 
+### Azure Operations
+
+#### Key Vault Secrets
+
+Browse and retrieve Azure Key Vault secrets with automatic JSON parsing:
+
+```bash
+# Search all secrets in a vault
+cu azure secrets --vault my-key-vault
+
+# Filter by name prefix
+cu azure secrets --vault my-key-vault --filter "prod-"
+```
+
+**Example output:**
+```
+[*] Listing secrets from vault my-key-vault with filter: prod-
+[*] Found 5 secrets. Opening fzf for selection...
+[*] Retrieving 1 selected secrets...
+[+] Secrets retrieved successfully.
+
+Name: 'prod-db-password'
+Content Type: 'password'
+ID: 'https://my-key-vault.vault.azure.net/secrets/prod-db-password/...'
+Value:
+super-secret-value
+```
+
+## 🎯 Interactive Selection
+
+All commands use `fzf` for interactive selection, providing:
+
+- **Fuzzy matching** - Type partial names to filter
+- **Multi-select** - Use `Tab` to select multiple items
+- **Real-time filtering** - Instant results as you type
+- **Keyboard shortcuts** - Standard fzf navigation
+
+## 📋 Command Reference
 
 ## 🔧 Development
 
