@@ -1,7 +1,7 @@
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -142,14 +142,18 @@ class SQLConfig(BaseModel):
     """Complete SQL configuration schema"""
 
     provider: ProviderConfig
-    database: List[DatabaseConfig] = Field(default_factory=list)
+    # FIX: annotated as Dict after normalize_database converts it from List
+    database: List[DatabaseConfig] | Dict[str, DatabaseConfig] = Field(
+        default_factory=list
+    )
     users: List[UserConfig] = Field(default_factory=list)
     custom_sql: List[CustomSQLQuery] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def normalize_database(self) -> "SQLConfig":
         """Convert database list to dict for internal use"""
-        self.database = {db.name: db for db in self.database}
+        if isinstance(self.database, list):
+            self.database = {db.name: db for db in self.database}
         return self
 
 
