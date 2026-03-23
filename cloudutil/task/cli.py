@@ -4,7 +4,10 @@ import typer
 
 def app(
     ctx: typer.Context,
-    yaml_file: str = f"{os.getenv('HOME')}/.config/cu/Taskfile.yml",
+    yaml_file: str = typer.Option(
+        f"{os.getenv('HOME')}/.config/cu/Taskfile.yml", "--taskfile", "-t"
+    ),
+    directory: str = typer.Option(os.getcwd(), "--directory", "-d"),
 ) -> None:
     """
     # ref: https://taskfile.dev/docs/getting-started
@@ -29,4 +32,4 @@ def app(
     """
 
     # Replace this process with `task` for full interactive TTY behavior.
-    os.execvp("task", ["task", "-t", yaml_file, *ctx.args])
+    os.execvp("task", ["task", "-t", yaml_file, "-d", directory, *ctx.args])
