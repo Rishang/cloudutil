@@ -80,6 +80,8 @@ git clone https://github.com/Rishang/cloudutil.git && cd cloudutil && uv build &
 - [Only for Azure operations] Azure CLI (`az login` must be run primarily)
 - [Only for Kubernetes operations] `kubectl` configured with access to your target cluster
 - [Only for Taskfile operations] [Taskfile](https://taskfile.dev/) installed and configured
+- [Only for Password Pusher operations] [Password Pusher](https://pwpush.com/) configured
+
 
 ```bash
 # Install fzf (if not already installed)
