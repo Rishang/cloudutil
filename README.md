@@ -35,6 +35,7 @@ pip install -U git+https://github.com/Rishang/cloudutil.git
       - [YAML Diff Checker](#yaml-diff-checker)
       - [Shell History](#shell-history)
     - [Taskfile Operations](#taskfile-operations)
+    - [Password Pusher Operations](#password-pusher-operations)
     - [SQL Operations](#sql-operations)
     - [Kubernetes Operations](#kubernetes-operations)
       - [Kubernetes Secrets](#kubernetes-secrets)
@@ -57,6 +58,7 @@ pip install -U git+https://github.com/Rishang/cloudutil.git
 - 🎛️ **Kubernetes Operations** - Interactive Kubernetes secrets and ConfigMaps browsing via `kubectl`
 - 🧰 **OS Utils** - YAML diff checker for cross-file config comparisons using JMESPath
 - 🗂️ **Taskfile Passthrough** - Run local Taskfile tasks via `cu task ...` with interactive terminal support
+- 🔐 **Password Pusher Integration** - Configure Password Pusher, share secrets, and generate strong passwords
 
 ## 📦 Installation
 
@@ -370,6 +372,34 @@ cu task --yaml-file ./Taskfile.yml default
 # Open task's own help
 cu task --help
 ```
+
+### Password Pusher Operations
+
+Manage temporary secret sharing with [Password Pusher](https://pwpush.com/).
+
+```bash
+# Save Password Pusher config
+cu pwpush config --source https://pwpush.com --token <api-token>
+
+# Optional legacy/self-hosted auth mode
+cu pwpush config --source https://pwpush.example.com --token <api-token> --email you@example.com
+
+# Send a secret (opens $EDITOR if --file is omitted)
+cu pwpush send --note "prod db password" --days 7 --views 5
+
+# Send secret from file
+cu pwpush send --file ./secret.txt --note "vpn creds"
+
+# List active pushes
+cu pwpush list-active
+
+# Generate a random password
+cu pwpush pwgen --length 24
+```
+
+Notes:
+- Config is stored at `~/.config/cu/psst.json`.
+- `send` uses bearer auth by default; if `--email` is configured, it uses legacy auth headers.
 
 ### SQL Operations
 

@@ -5,7 +5,7 @@ from .k8s.cli import app as k8s_app
 from .os_utils.cli import app as os_utils_app
 from .sql.cli import app as sql_app
 from .task.cli import app as task_app
-from .psst.cli import app as psst_app
+from .pwpush.cli import app as pwpush_app
 
 app = typer.Typer(
     pretty_exceptions_enable=False,
@@ -17,7 +17,7 @@ app.add_typer(sql_app, name="sql", help="SQL database management commands")
 app.add_typer(os_utils_app, name="os", help="OS-related commands")
 app.add_typer(k8s_app, name="k8s", help="Kubernetes-related commands")
 app.add_typer(
-    psst_app,
+    pwpush_app,
     name="pwpush",
     help="Password Pusher commands ref: https://docs.pwpush.com/",
 )
