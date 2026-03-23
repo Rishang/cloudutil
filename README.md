@@ -64,6 +64,12 @@ pip install -U git+https://github.com/Rishang/cloudutil.git
 pip install -U git+https://github.com/Rishang/cloudutil.git
 ```
 
+OR
+
+```bash
+git clone https://github.com/Rishang/cloudutil.git && cd cloudutil && uv build && pip install ./dist/cloudutil-*.tar.gz
+```
+
 ### Requirements
 
 - Python 3.12+
