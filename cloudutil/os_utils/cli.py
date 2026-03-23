@@ -24,7 +24,10 @@ app = typer.Typer(
 
 
 @app.command()
-def history():
+def history(help="Search shell history with fzf"):
+    """
+    Search shell history with fzf.
+    """
     shell = os.environ.get("SHELL", "")
 
     if "zsh" in shell:
