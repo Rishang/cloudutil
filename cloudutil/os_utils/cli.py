@@ -1,11 +1,12 @@
 """CLI for os_utils (e.g. YAML diff checker)."""
 
+import subprocess
 from pathlib import Path
 from typing import Annotated
+import os
 
 import typer
 from rich.rule import Rule
-
 from cloudutil.utils import console
 from cloudutil.os_utils.yaml_diff import (
     DiffCheckConfig,
@@ -20,6 +21,20 @@ app = typer.Typer(
     rich_markup_mode="rich",
     no_args_is_help=True,
 )
+
+
+@app.command()
+def history():
+    shell = os.environ.get("SHELL", "")
+
+    if "zsh" in shell:
+        cmd = r"""cat ~/.zsh_history | sed 's/^: [0-9]*:[0-9]*;//' | sort -u | fzf -e"""
+    elif "bash" in shell:
+        cmd = r"""cat ~/.bash_history | sort -u | fzf -e"""
+    else:
+        raise typer.Exit(1, f"Unsupported shell: {shell}")
+
+    subprocess.run(["bash", "-c", cmd])
 
 
 @app.command()
