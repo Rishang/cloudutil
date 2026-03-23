@@ -1,4 +1,4 @@
-"""Apply PostgreSQL configuration (shared by CLI and Ansible)."""
+"""Apply PostgreSQL configuration — used by the CLI."""
 
 from __future__ import annotations
 
@@ -8,57 +8,30 @@ from typing import Any
 from cloudutil.sql.modules.postgres import PostgreSQLBuilder
 
 
-def apply_postgres_config(
-    *,
-    config: dict[str, Any] | None = None,
-    config_path: str | Path | None = None,
-) -> tuple[bool, list[dict[str, Any]]]:
-    """
-    Apply CloudUtil PostgreSQL YAML config.
+def _resolve_path(config_path: str | Path) -> Path:
+    path = Path(config_path).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"Config file not found: {path}")
+    return path
 
-    Provide exactly one of ``config`` or ``config_path``.
+
+def apply_postgres_config(config_path: str | Path) -> tuple[bool, list[dict[str, Any]]]:
+    """
+    Apply a PostgreSQL YAML config file.
 
     Returns:
         Tuple of (changed, serialized change reports).
     """
-    if (config is None) == (config_path is None):
-        raise ValueError("Provide exactly one of config or config_path")
-
-    if config_path is not None:
-        path = Path(config_path).expanduser().resolve()
-        if not path.is_file():
-            raise FileNotFoundError(f"Config file not found: {path}")
-        provider = PostgreSQLBuilder().from_yaml(path).build()
-    else:
-        provider = PostgreSQLBuilder().from_dict(config).build()
-
+    provider = PostgreSQLBuilder().from_yaml(_resolve_path(config_path)).build()
     with provider:
         provider.execute()
 
     changed = any(
         c.operation in ("create", "update", "execute") for c in provider.changes
     )
-    serialized = [c.model_dump() for c in provider.changes]
-    return changed, serialized
+    return changed, [c.model_dump() for c in provider.changes]
 
 
-def validate_postgres_config(
-    *,
-    config: dict[str, Any] | None = None,
-    config_path: str | Path | None = None,
-) -> None:
-    """
-    Parse and validate config without connecting to the database.
-
-    Provide exactly one of ``config`` or ``config_path``.
-    """
-    if (config is None) == (config_path is None):
-        raise ValueError("Provide exactly one of config or config_path")
-
-    if config_path is not None:
-        path = Path(config_path).expanduser().resolve()
-        if not path.is_file():
-            raise FileNotFoundError(f"Config file not found: {path}")
-        PostgreSQLBuilder().from_yaml(path).build()
-    else:
-        PostgreSQLBuilder().from_dict(config).build()
+def validate_postgres_config(config_path: str | Path) -> None:
+    """Parse and validate a config file without connecting to the database."""
+    PostgreSQLBuilder().from_yaml(_resolve_path(config_path)).build()

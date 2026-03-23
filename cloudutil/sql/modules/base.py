@@ -1,7 +1,7 @@
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -18,19 +18,12 @@ class ProviderConfig(BaseModel):
     port: int
     username: str
     password: str
-    cert: Optional[str] = None
+    cert: str | None = None
 
-    @field_validator("username", mode="before")
+    @field_validator("username", "password", mode="before")
     @classmethod
-    def resolve_username(cls, v: str) -> str:
-        """Resolve username from environment variable if specified as ${VAR_NAME}"""
-        return resolve_env_variable(v, "provider.username")
-
-    @field_validator("password", mode="before")
-    @classmethod
-    def resolve_password(cls, v: str) -> str:
-        """Resolve password from environment variable if specified as ${VAR_NAME}"""
-        return resolve_env_variable(v, "provider.password")
+    def resolve_env_vars(cls, v: str, info) -> str:
+        return resolve_env_variable(v, f"provider.{info.field_name}")
 
 
 class ExtensionConfig(BaseModel):
@@ -44,7 +37,7 @@ class DatabaseConfig(BaseModel):
 
     name: str
     create: bool = True
-    extensions: List[ExtensionConfig] = Field(default_factory=list)
+    extensions: list[ExtensionConfig] = Field(default_factory=list)
 
 
 class PrivilegeConfig(BaseModel):
@@ -54,7 +47,7 @@ class PrivilegeConfig(BaseModel):
     db_schema: str = "public"
     readwrite: bool = False
     readonly: bool = False
-    tables: List[str] = Field(default_factory=list)
+    tables: list[str] = Field(default_factory=list)
 
 
 class UserConfig(BaseModel):
@@ -62,12 +55,11 @@ class UserConfig(BaseModel):
 
     name: str
     password: str
-    privileges: List[PrivilegeConfig] = Field(default_factory=list)
+    privileges: list[PrivilegeConfig] = Field(default_factory=list)
 
     @field_validator("password", mode="before")
     @classmethod
     def resolve_password(cls, v: str) -> str:
-        """Resolve password from environment variable if specified as ${VAR_NAME}"""
         return resolve_env_variable(v, "user.password")
 
 
@@ -79,24 +71,18 @@ class CustomSQLQuery(BaseModel):
         description="Jinja template source string from YAML (not the rendered SQL).",
     )
     query_raw: str = Field(
-        default="",
-        description="Rendered SQL used for execution and automation tasks (set in model_post_init).",
+        default="", description="Rendered SQL set in model_post_init."
     )
-    template_context: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Extra keyword arguments passed to render() (in addition to env globals).",
-    )
+    template_context: dict[str, Any] = Field(default_factory=dict)
     loader_path: str | list[str] = Field(
-        default=".",
-        description="Root path(s) for FileSystemLoader (e.g. {% include 'fragment.sql' %}).",
+        default=".", description="Root path(s) for FileSystemLoader."
     )
     inject_env: bool = Field(
-        default=True,
-        description="If true, set env.globals['env'] = os.environ (use {{ env.VAR }} in templates).",
+        default=True, description="Expose os.environ as {{ env.VAR }} in templates."
     )
     database: str = "postgres"
-    params: List[Any] = Field(default_factory=list)
-    name: Optional[str] = None
+    params: list[Any] = Field(default_factory=list)
+    name: str | None = None
 
     @field_validator("query", mode="before")
     @classmethod
@@ -105,31 +91,6 @@ class CustomSQLQuery(BaseModel):
             return v.strip()
         raise ValueError("custom_sql.query must be a non-empty string")
 
-    def model_post_init(self, __context: Any) -> None:
-        """Compile ``query`` with a filesystem-backed Jinja Environment; set ``query_raw``."""
-        searchpaths = self._resolve_loader_paths()
-        jinja_env = Environment(
-            loader=FileSystemLoader(searchpaths),
-            autoescape=False,
-        )
-        if self.inject_env:
-            jinja_env.globals["env"] = os.environ
-        tmpl = jinja_env.from_string(self.query)
-        object.__setattr__(self, "query_raw", tmpl.render(**self.template_context))
-
-    def _resolve_loader_paths(self) -> List[str]:
-        raw = self.loader_path
-        paths = [raw] if isinstance(raw, str) else list(raw)
-        resolved: List[str] = []
-        for p in paths:
-            path = Path(p).expanduser().resolve()
-            if not path.is_dir():
-                raise ValueError(
-                    f"custom_sql.loader_path must be an existing directory: {path}"
-                )
-            resolved.append(str(path))
-        return resolved
-
     @field_validator("database")
     @classmethod
     def database_not_blank(cls, v: str) -> str:
@@ -137,21 +98,42 @@ class CustomSQLQuery(BaseModel):
             raise ValueError("custom_sql.database must be a non-empty string")
         return v.strip()
 
+    def model_post_init(self, __context: Any) -> None:
+        """Render the Jinja template and store result in query_raw."""
+        paths = (
+            [self.loader_path]
+            if isinstance(self.loader_path, str)
+            else self.loader_path
+        )
+        resolved = []
+        for p in paths:
+            path = Path(p).expanduser().resolve()
+            if not path.is_dir():
+                raise ValueError(
+                    f"custom_sql.loader_path must be an existing directory: {path}"
+                )
+            resolved.append(str(path))
+
+        jinja_env = Environment(loader=FileSystemLoader(resolved), autoescape=False)
+        if self.inject_env:
+            jinja_env.globals["env"] = os.environ
+
+        rendered = jinja_env.from_string(self.query).render(**self.template_context)
+        object.__setattr__(self, "query_raw", rendered)
+
 
 class SQLConfig(BaseModel):
     """Complete SQL configuration schema"""
 
     provider: ProviderConfig
-    # FIX: annotated as Dict after normalize_database converts it from List
-    database: List[DatabaseConfig] | Dict[str, DatabaseConfig] = Field(
+    database: list[DatabaseConfig] | dict[str, DatabaseConfig] = Field(
         default_factory=list
     )
-    users: List[UserConfig] = Field(default_factory=list)
-    custom_sql: List[CustomSQLQuery] = Field(default_factory=list)
+    users: list[UserConfig] = Field(default_factory=list)
+    custom_sql: list[CustomSQLQuery] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def normalize_database(self) -> "SQLConfig":
-        """Convert database list to dict for internal use"""
         if isinstance(self.database, list):
             self.database = {db.name: db for db in self.database}
         return self
@@ -165,47 +147,31 @@ class BaseSQLProvider(ABC):
         self._connection = None
 
     @abstractmethod
-    def connect(self) -> None:
-        """Establish connection to the database"""
-        pass
+    def connect(self) -> None: ...
 
     @abstractmethod
-    def disconnect(self) -> None:
-        """Close database connection"""
-        pass
+    def disconnect(self) -> None: ...
 
     @abstractmethod
-    def create_database(self, db_config: DatabaseConfig) -> None:
-        """Create a database"""
-        pass
+    def create_database(self, db_config: DatabaseConfig) -> None: ...
 
     @abstractmethod
     def install_extensions(
-        self, db_name: str, extensions: List[ExtensionConfig]
-    ) -> None:
-        """Install database extensions"""
-        pass
+        self, db_name: str, extensions: list[ExtensionConfig]
+    ) -> None: ...
 
     @abstractmethod
-    def create_user(self, user_config: UserConfig) -> None:
-        """Create a database user"""
-        pass
+    def create_user(self, user_config: UserConfig) -> None: ...
 
     @abstractmethod
-    def grant_privileges(self, user_name: str, privilege: PrivilegeConfig) -> None:
-        """Grant privileges to a user"""
-        pass
+    def grant_privileges(self, user_name: str, privilege: PrivilegeConfig) -> None: ...
 
     @abstractmethod
-    def execute(self) -> None:
-        """Execute all configurations"""
-        pass
+    def execute(self) -> None: ...
 
     def __enter__(self):
-        """Context manager entry"""
         self.connect()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit"""
         self.disconnect()

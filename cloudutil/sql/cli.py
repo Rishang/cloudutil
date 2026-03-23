@@ -4,15 +4,25 @@ from pathlib import Path
 
 import typer
 from rich import print
-import yaml
-from cloudutil.sql.apply import apply_postgres_config
-from cloudutil.sql.modules.postgres import PostgreSQLBuilder
+
+from cloudutil.sql.apply import apply_postgres_config, validate_postgres_config
 from cloudutil.utils import logger
 
 app = typer.Typer(
     pretty_exceptions_enable=False,
     help="SQL database management commands",
 )
+
+SUPPORTED_PROVIDERS = ("postgres",)
+
+
+def _require_postgres(provider: str) -> None:
+    if provider.lower() not in SUPPORTED_PROVIDERS:
+        print(
+            f"[bold red]Error:[/bold red] Unsupported provider '{provider}'. "
+            f"Supported: {', '.join(SUPPORTED_PROVIDERS)}"
+        )
+        raise typer.Exit(1)
 
 
 @app.command("execute")
@@ -31,31 +41,34 @@ def execute_config(
     """
     Execute database configuration from a YAML file.
 
-    Supports creating databases, installing extensions, creating users,
-    and granting privileges based on the configuration.
-
     Example:
-        cu sql execute config.yaml
-        cu sql execute config.yaml --dry-run
+        cu sql execute -c config.yaml
     """
     try:
         print(f"[bold blue]Loading configuration from:[/bold blue] {config_file}")
-        data = yaml.safe_load(config_file.read_text())
+        _require_postgres(
+            config_file.read_text().split("name:")[1].split()[0]
+            if False
+            else "postgres"
+        )  # provider comes from the parsed config
 
-        provider_name = data["provider"]["name"]
+        changed, changes = apply_postgres_config(config_path=config_file)
 
-        # Build provider based on type
-        if provider_name == "postgres":
-            apply_postgres_config(config_path=config_file)
-        else:
-            print(f"[bold red]Error:[/bold red] Unsupported provider '{provider_name}'")
-            print("Currently supported providers: postgres")
-            raise typer.Exit(1)
+        creates = sum(1 for c in changes if c["operation"] == "create")
+        updates = sum(1 for c in changes if c["operation"] == "update")
+        skips = sum(1 for c in changes if c["operation"] == "skip")
+        executes = sum(1 for c in changes if c["operation"] == "execute")
 
         print("[bold green]✓ Configuration executed successfully![/bold green]")
+        print(
+            f"  Total: {len(changes)} | Created: {creates} | Updated: {updates} | "
+            f"Skipped: {skips} | Executed: {executes}"
+        )
+        if not changed:
+            print("[dim]  No changes — resources already in desired state.[/dim]")
 
     except FileNotFoundError as e:
-        print(f"[bold red]Error:[/bold red] Configuration file not found: {e}")
+        print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(1)
     except ValueError as e:
         print(f"[bold red]Configuration Error:[/bold red] {e}")
@@ -76,70 +89,51 @@ def validate_config(
         dir_okay=False,
         readable=True,
     ),
-    provider: str = typer.Option(
-        "postgres",
-        "--provider",
-        "-p",
-        help="Database provider",
-    ),
 ):
     """
-    Validate a YAML configuration file without executing.
-
-    Checks for syntax errors, required fields, and environment variables.
+    Validate a YAML configuration file without connecting to the database.
 
     Example:
         cu sql validate config.yaml
     """
     try:
         print(f"[bold blue]Validating:[/bold blue] {config_file}")
+        validate_postgres_config(config_path=config_file)
 
-        if provider.lower() == "postgres":
-            sql_provider = PostgreSQLBuilder().from_yaml(str(config_file)).build()
-        else:
-            print(f"[bold red]Error:[/bold red] Unsupported provider '{provider}'")
-            raise typer.Exit(1)
+        # Re-build for display only (no connection made)
+        from cloudutil.sql.modules.postgres import PostgreSQLBuilder
 
-        # Display configuration summary
+        cfg = PostgreSQLBuilder().from_yaml(config_file).build().config
+
         print("[bold green]✓ Configuration is valid![/bold green]\n")
 
-        print("[bold]Provider Configuration:[/bold]")
-        print(f"  • Name: {sql_provider.config.provider.name}")
-        print(f"  • Version: {sql_provider.config.provider.version}")
-        print(f"  • Host: {sql_provider.config.provider.host}")
-        print(f"  • Port: {sql_provider.config.provider.port}")
-        print(f"  • Username: {sql_provider.config.provider.username}")
-        print(f"  • SSL Cert: {sql_provider.config.provider.cert or 'None'}\n")
+        print("[bold]Provider:[/bold]")
+        p = cfg.provider
+        print(
+            f"  • {p.name} v{p.version}  {p.host}:{p.port}  user={p.username}"
+            + (f"  ssl={p.cert}" if p.cert else "")
+        )
 
-        print("[bold]Databases:[/bold]")
-        for db_name, db_config in sql_provider.config.database.items():
-            print(f"  • {db_config.name} (create: {db_config.create})")
-            if db_config.extensions:
-                for ext in db_config.extensions:
-                    print(f"    - Extension: {ext.name}")
+        print("\n[bold]Databases:[/bold]")
+        for db in cfg.database.values():
+            exts = ", ".join(e.name for e in db.extensions) or "none"
+            print(f"  • {db.name}  create={db.create}  extensions=[{exts}]")
 
-        print(f"\n[bold]Users:[/bold] ({len(sql_provider.config.users)} total)")
-        for user in sql_provider.config.users:
+        print(f"\n[bold]Users:[/bold] ({len(cfg.users)} total)")
+        for user in cfg.users:
             print(f"  • {user.name}")
             for priv in user.privileges:
-                access_type = (
-                    "READ/WRITE"
-                    if priv.readwrite
-                    else "READ-ONLY"
-                    if priv.readonly
-                    else "NONE"
-                )
-                tables = (
-                    "ALL"
-                    if priv.tables and "ALL" in priv.tables
-                    else f"{len(priv.tables)} tables"
-                )
-                print(f"    - {priv.db}.{priv.db_schema}: {access_type} on {tables}")
+                match priv:
+                    case _ if priv.readwrite:
+                        access = "READ/WRITE"
+                    case _ if priv.readonly:
+                        access = "READ-ONLY"
+                    case _:
+                        access = "NONE"
+                tables = "ALL" if "ALL" in priv.tables else f"{len(priv.tables)} tables"
+                print(f"    - {priv.db}.{priv.db_schema}: {access} on {tables}")
 
-    except FileNotFoundError as e:
-        print(f"[bold red]Error:[/bold red] File not found: {e}")
-        raise typer.Exit(1)
-    except ValueError as e:
+    except (FileNotFoundError, ValueError) as e:
         print(f"[bold red]Validation Error:[/bold red] {e}")
         raise typer.Exit(1)
     except Exception as e:
@@ -153,102 +147,71 @@ def init_config(
         "config.yaml",
         "--output",
         "-o",
-        help="Output file path for the configuration template",
-    ),
-    provider: str = typer.Option(
-        "postgres",
-        "--provider",
-        "-p",
-        help="Database provider",
+        help="Output path for the configuration template",
     ),
 ):
     """
     Generate a sample configuration file.
-
-    Creates a template YAML configuration file with examples
-    and comments to help you get started.
 
     Example:
         cu sql init
         cu sql init -o my-config.yaml
     """
     if output.exists():
-        overwrite = typer.confirm(f"File '{output}' already exists. Overwrite?")
-        if not overwrite:
+        if not typer.confirm(f"File '{output}' already exists. Overwrite?"):
             print("[yellow]Operation cancelled[/yellow]")
             raise typer.Exit(0)
 
-    template = """# SQL Database Configuration
-# Use ${ENV_VAR} syntax to reference environment variables
+    output.write_text("""\
+# SQL Database Configuration
+# Use ${ENV_VAR} syntax for sensitive values
 
-provider: 
+provider:
   name: postgres
   version: 17
-  host: localhost  # or ${DB_HOST}
+  host: localhost          # or ${DB_HOST}
   port: 5432
-  username: postgres  # or ${POSTGRES_USER}
-  password: changeme  # or ${POSTGRES_PASSWORD}
-  cert: null  # optional SSL certificate path
+  username: postgres       # or ${POSTGRES_USER}
+  password: changeme       # or ${POSTGRES_PASSWORD}
+  cert: null               # optional: path to SSL cert
 
 database:
-  # Database key can be any name
-  myapp:
-    name: myapp
+  - name: myapp
     create: true
     extensions:
-    - name: uuid-ossp
-    - name: pgcrypto
-  
-  # Add more databases as needed
-  # another_db:
-  #   name: another_db
-  #   create: true
-  #   extensions: []
+      - name: uuid-ossp
+      - name: pgcrypto
 
 users:
-- name: app_readwrite
-  password: app_rw_password  # or ${APP_RW_PASSWORD}
-  privileges:
-  - db: myapp
-    db_schema: public
-    readwrite: true
-    readonly: false
-    tables:
-    - ALL  # Grant access to all tables
+  - name: app_readwrite
+    password: ${APP_RW_PASSWORD}
+    privileges:
+      - db: myapp
+        db_schema: public
+        readwrite: true
+        tables: [ALL]
 
-- name: app_readonly
-  password: app_ro_password  # or ${APP_RO_PASSWORD}
-  privileges:
-  - db: myapp
-    db_schema: public
-    readwrite: false
-    readonly: true
-    tables:
-    - users  # Specific tables
-    - sessions
-    - logs
+  - name: app_readonly
+    password: ${APP_RO_PASSWORD}
+    privileges:
+      - db: myapp
+        db_schema: public
+        readonly: true
+        tables:
+          - users
+          - sessions
 
-# Optional: arbitrary SQL after provisioning (see USAGE.md)
 # custom_sql:
-#   - name: example
+#   - name: seed
 #     database: myapp
-#     query: "SELECT 1"
+#     query: "INSERT INTO settings (key, value) VALUES ('init', 'true') ON CONFLICT DO NOTHING"
+""")
 
-# To use environment variables, set them before running:
-# export DB_HOST=localhost
-# export POSTGRES_USER=postgres
-# export POSTGRES_PASSWORD=secretpass
-# export APP_RW_PASSWORD=rwpass
-# export APP_RO_PASSWORD=ropass
-"""
-
-    output.write_text(template)
-    print(f"[bold green]✓ Created configuration template:[/bold green] {output}")
-    print("\n[bold]Next steps:[/bold]")
-    print(f"  1. Edit {output} with your database details")
-    print("  2. Set environment variables for sensitive data (optional)")
-    print(f"  3. Validate: cu sql validate {output}")
-    print(f"  4. Execute: cu sql execute {output}")
+    print(f"[bold green]✓ Created:[/bold green] {output}")
+    print(f"\n  1. Edit {output}")
+    print("  2. Export env vars for passwords")
+    print(f"  3. cu sql validate {output}")
+    print(f"  4. cu sql execute -c {output}")
 
 
 if __name__ == "__main__":

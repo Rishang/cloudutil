@@ -1,165 +1,141 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
-# Copyright: (c) CloudUtil contributors
-# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
-"""Ansible module: apply CloudUtil PostgreSQL YAML configuration."""
-
 from __future__ import annotations
 
 import traceback
+from collections import Counter
+from typing import Any
 
 from ansible.module_utils.basic import AnsibleModule
+
+try:
+    import yaml
+    from cloudutil.sql.modules.postgres import PostgreSQLBuilder
+
+    HAS_DEPS = True
+except ImportError:
+    HAS_DEPS = False
+
 
 DOCUMENTATION = r"""
 ---
 module: cloudutil_postgres
-short_description: Provision PostgreSQL databases, extensions, users, and privileges from CloudUtil YAML
+short_description: Provision PostgreSQL databases, extensions, users, and privileges
 description:
-  - Applies the same schema as C(cu sql execute) / C(cu sql validate).
-  - Requires the C(cloudutil) Python package (and dependencies such as C(psycopg2-binary)) on the host where the module runs (usually the Ansible controller with C(connection: local), or the target if you delegate).
-version_added: "0.2.0"
+  - Idempotent provisioning of PostgreSQL resources from a config dict, YAML file, or YAML string.
 options:
-  config_path:
-    description:
-      - Path to a YAML file using the CloudUtil SQL schema (see I(cloudutil/sql/example.yaml) in the repository).
-    type: path
-    required: false
   config:
-    description:
-      - Inline configuration as a dictionary (same structure as the YAML file).
+    description: Inline config dict (mutually exclusive with config_file and config_string).
     type: dict
-    required: false
-  provider:
-    description:
-      - Reserved for future providers. Only C(postgres) is implemented.
+  config_file:
+    description: Path to a YAML config file on the target host.
+    type: path
+  config_string:
+    description: Raw YAML string.
     type: str
-    default: postgres
-    choices:
-      - postgres
-  state:
-    description:
-      - C(present) connects and applies configuration.
-      - C(validated) only parses and validates configuration (no database connection).
-    type: str
-    default: present
-    choices:
-      - present
-      - validated
 requirements:
+  - psycopg2
   - cloudutil
-  - psycopg2-binary
-seealso:
-  - name: CloudUtil SQL usage
-    description: Configuration schema and examples.
-    link: https://github.com/Rishang/cloudutil/blob/main/cloudutil/sql/USAGE.md
-author:
-  - CloudUtil contributors
 """
 
 EXAMPLES = r"""
-- name: Apply SQL config from a file on the controller
-  cloudutil_postgres:
-    config_path: /opt/app/sql/example.yaml
-  environment:
-    POSTGRES_PASSWORD: "{{ vault_postgres_password }}"
-    APP_SERVICE_PASSWORD: "{{ vault_app_password }}"
-  delegate_to: localhost
-  connection: local
-
-- name: Inline config (passwords via environment or Ansible vars resolved in the dict)
+- name: Provision from inline config
   cloudutil_postgres:
     config:
       provider:
         name: postgres
         version: 17
-        host: "{{ db_host }}"
+        host: localhost
         port: 5432
         username: postgres
-        password: "{{ postgres_password }}"
+        password: "{{ pg_password }}"
       database:
         - name: myapp
           create: true
-          extensions: []
-      users: []
-  delegate_to: localhost
-  connection: local
+          extensions:
+            - name: uuid-ossp
+      users:
+        - name: app_user
+          password: "{{ app_password }}"
+          privileges:
+            - db: myapp
+              readwrite: true
+              tables: [ALL]
 
-- name: Validate YAML only (no DB connection)
+- name: Provision from YAML file
   cloudutil_postgres:
-    config_path: /opt/app/sql/example.yaml
-    state: validated
-  delegate_to: localhost
-  connection: local
+    config_file: /etc/myapp/pg_config.yaml
+
+- name: Provision from YAML string
+  cloudutil_postgres:
+    config_string: "{{ lookup('file', 'pg_config.yaml') }}"
 """
 
 RETURN = r"""
 changed:
-  description: Whether any create or update operation was performed.
-  type: bool
+  description: True if any resource was created, updated, or executed.
   returned: always
+  type: bool
 changes:
-  description: List of change reports from the PostgreSQL provider.
+  description: List of all operations performed.
+  returned: always
   type: list
   elements: dict
-  returned: when state is present
+summary:
+  description: Count of each operation type.
+  returned: always
+  type: dict
+  sample: {total: 4, create: 2, update: 1, skip: 1, execute: 0}
 """
+
+
+def _build_provider(params: dict[str, Any]):
+    match params:
+        case {"config": config} if config:
+            return PostgreSQLBuilder().from_dict(config).build()
+        case {"config_file": path} if path:
+            return PostgreSQLBuilder().from_yaml(path).build()
+        case {"config_string": s} if s:
+            return PostgreSQLBuilder().from_dict(yaml.safe_load(s)).build()
 
 
 def main() -> None:
     module = AnsibleModule(
         argument_spec={
-            "config_path": {"type": "path", "required": False},
-            "config": {"type": "dict", "required": False},
-            "provider": {
-                "type": "str",
-                "default": "postgres",
-                "choices": ["postgres"],
-            },
-            "state": {
-                "type": "str",
-                "default": "present",
-                "choices": ["present", "validated"],
-            },
+            "config": {"type": "dict"},
+            "config_file": {"type": "path"},
+            "config_string": {"type": "str"},
         },
-        mutually_exclusive=[["config", "config_path"]],
-        required_one_of=[["config", "config_path"]],
+        mutually_exclusive=[["config", "config_file", "config_string"]],
+        required_one_of=[["config", "config_file", "config_string"]],
         supports_check_mode=False,
     )
 
-    try:
-        from cloudutil.sql.apply import apply_postgres_config, validate_postgres_config
-    except ImportError as exc:
+    if not HAS_DEPS:
         module.fail_json(
-            msg="The cloudutil package must be installed to use this module "
-            "(e.g. pip install cloudutil).",
-            exception=str(exc),
+            msg="Missing required dependencies: psycopg2, cloudutil. "
+            "Install with: pip install psycopg2-binary cloudutil"
         )
 
-    if module.params["provider"] != "postgres":
-        module.fail_json(msg="Only provider 'postgres' is supported.")
-
-    state = module.params["state"]
-    config = module.params["config"]
-    config_path = module.params["config_path"]
-
     try:
-        if state == "validated":
-            validate_postgres_config(config=config, config_path=config_path)
-            module.exit_json(changed=False, validated=True)
-        else:
-            changed, changes = apply_postgres_config(
-                config=config, config_path=config_path
-            )
-            module.exit_json(changed=changed, changes=changes)
-    except FileNotFoundError as exc:
-        module.fail_json(msg=str(exc))
-    except ValueError as exc:
-        module.fail_json(msg=str(exc))
-    except Exception as exc:
-        module.fail_json(
-            msg=str(exc),
-            exception=traceback.format_exc(),
-        )
+        provider = _build_provider(module.params)
+        with provider:
+            provider.execute()
+    except Exception:
+        module.fail_json(msg=traceback.format_exc())
+
+    changes = [c.model_dump(exclude_none=True) for c in provider.changes]
+    counts = Counter(c["operation"] for c in changes)
+
+    module.exit_json(
+        changed=any(c["operation"] in ("create", "update", "execute") for c in changes),
+        changes=changes,
+        summary={
+            "total": len(changes),
+            "create": counts["create"],
+            "update": counts["update"],
+            "skip": counts["skip"],
+            "execute": counts["execute"],
+        },
+    )
 
 
 if __name__ == "__main__":
