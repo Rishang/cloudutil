@@ -33,6 +33,7 @@ pip install -U git+https://github.com/Rishang/cloudutil.git
       - [Key Vault Secrets](#key-vault-secrets)
     - [OS Utils](#os-utils)
       - [YAML Diff Checker](#yaml-diff-checker)
+      - [Shell History](#shell-history)
     - [Taskfile Operations](#taskfile-operations)
     - [SQL Operations](#sql-operations)
     - [Kubernetes Operations](#kubernetes-operations)
@@ -335,6 +336,14 @@ Notes:
 - Every item under `files` is a single-key mapping: `{alias: path}`.
 - At least 2 files are required per check.
 - You can use `$branch` as an alias to auto-resolve the current git branch name for that file path.
+
+#### Shell History
+
+Search shell history with fzf.
+
+```bash
+cu os history
+```
 
 ### Taskfile Operations
 
