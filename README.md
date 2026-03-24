@@ -420,16 +420,16 @@ View and inspect Secret keys. Each key appears as `namespace/secret-name/key`; v
 
 ```bash
 # Scan secrets across all namespaces
-cu k8s secrets
+cu k secrets
 
 # Scan a specific namespace
-cu k8s secrets --namespace default
+cu k secrets --namespace default
 
 # Explicitly scan all namespaces
-cu k8s secrets -A
+cu k secrets -A
 
 # Choose namespace interactively first, then pick secrets
-cu k8s secrets --select-namespace
+cu k secrets --select-namespace
 ```
 
 **Example output** (one selected key):
@@ -447,16 +447,16 @@ View and inspect ConfigMap keys. Each key appears as `namespace/configmap-name/k
 
 ```bash
 # Scan ConfigMaps across all namespaces
-cu k8s configmaps
+cu k configmaps
 
 # Scan a specific namespace
-cu k8s configmaps --namespace kube-system
+cu k configmaps --namespace kube-system
 
 # Explicitly scan all namespaces
-cu k8s configmaps --all-namespaces
+cu k configmaps --all-namespaces
 
 # Choose namespace interactively first, then pick ConfigMaps
-cu k8s configmaps --select-namespace
+cu k configmaps --select-namespace
 ```
 
 **Example output** (one selected key):
@@ -474,7 +474,7 @@ Switch kube contexts interactively using `fzf`.
 
 ```bash
 # Pick a context from kubeconfig and switch to it
-cu k8s ctx
+cu k ctx
 ```
 
 Notes:

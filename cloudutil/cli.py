@@ -15,7 +15,7 @@ app.add_typer(aws_app, name="aws", help="AWS-related commands")
 app.add_typer(azure_app, name="az", help="Azure-related commands")
 app.add_typer(sql_app, name="sql", help="SQL database management commands")
 app.add_typer(os_utils_app, name="os", help="OS-related commands")
-app.add_typer(k8s_app, name="k8s", help="Kubernetes-related commands")
+app.add_typer(k8s_app, name="k", help="Kubernetes-related commands")
 app.add_typer(
     pwpush_app,
     name="pwpush",
