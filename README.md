@@ -34,6 +34,7 @@ pip install -U git+https://github.com/Rishang/cloudutil.git
     - [Kubernetes Operations](#kubernetes-operations)
       - [Kubernetes Secrets](#kubernetes-secrets)
       - [Kubernetes ConfigMaps](#kubernetes-configmaps)
+      - [Kubernetes Cluster Context Switching](#kubernetes-cluster-context-switching)
     - [OS Utils](#os-utils)
       - [YAML Diff Checker](#yaml-diff-checker)
       - [Shell History](#shell-history)
@@ -466,6 +467,19 @@ cu k8s configmaps --select-namespace
   }
 }
 ```
+
+#### Kubernetes Cluster Context Switching
+
+Switch kube contexts interactively using `fzf`.
+
+```bash
+# Pick a context from kubeconfig and switch to it
+cu k8s ctx
+```
+
+Notes:
+- Context names are read from your current kubeconfig (`kubectl config view -o json`).
+- The selected context is applied with `kubectl config use-context`.
 
 ## 🎯 Interactive Selection
 

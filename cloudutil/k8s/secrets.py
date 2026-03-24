@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import base64
-import json
 from typing import List, Optional
 
 from pydantic import BaseModel, computed_field
 
-from cloudutil.helper import fzf_select, shell
+from cloudutil.helper import fzf_select
+from cloudutil.k8s.util import _kubectl_json
 from cloudutil.helper.fzf_view import FzfView
 from cloudutil.utils import console
 
@@ -34,16 +34,6 @@ class K8sSecretKeyRef(BaseModel):
     @property
     def display(self) -> str:
         return f"{self.namespace}/{self.name}/{self.key}"
-
-
-def _kubectl_json(args: List[str]) -> dict:
-    ok, out, err = shell.run_command(["kubectl", *args])
-    if not ok:
-        raise RuntimeError(f"kubectl {' '.join(args)} failed: {err or out}")
-    try:
-        return json.loads(out)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Failed to parse kubectl output as JSON: {exc}") from exc
 
 
 def _list_namespaces() -> List[str]:
