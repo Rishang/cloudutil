@@ -31,7 +31,7 @@ def history(help="Search shell history with fzf"):
     shell = os.environ.get("SHELL", "")
 
     if "zsh" in shell:
-        cmd = r"""cat ~/.zsh_history | sed 's/^: [0-9]*:[0-9]*;//' | sort -u | fzf -e"""
+        cmd = r"""cat ~/.zsh_history | sed 's/^: [0-9]*:[0-9]*;//' | sort -u | fzf -e -m"""
     elif "bash" in shell:
         cmd = r"""cat ~/.bash_history | sort -u | fzf -e"""
     else:
