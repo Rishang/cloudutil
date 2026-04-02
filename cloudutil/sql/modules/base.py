@@ -19,11 +19,37 @@ class ProviderConfig(BaseModel):
     username: str
     password: str
     cert: str | None = None
+    ssl_mode: str | None = None
 
     @field_validator("username", "password", mode="before")
     @classmethod
     def resolve_env_vars(cls, v: str, info) -> str:
         return resolve_env_variable(v, f"provider.{info.field_name}")
+
+    @model_validator(mode="after")
+    def validate_ssl(self) -> "ProviderConfig":
+        valid_modes = {
+            "disable",
+            "allow",
+            "prefer",
+            "require",
+            "verify-ca",
+            "verify-full",
+        }
+        if self.ssl_mode is not None and self.ssl_mode not in valid_modes:
+            raise ValueError(
+                f"provider.ssl_mode '{self.ssl_mode}' is not valid. "
+                f"Choose from: {', '.join(sorted(valid_modes))}"
+            )
+        if (
+            self.cert
+            and self.ssl_mode
+            and self.ssl_mode not in {"verify-ca", "verify-full"}
+        ):
+            raise ValueError(
+                f"provider.cert requires ssl_mode 'verify-ca' or 'verify-full', got '{self.ssl_mode}'"
+            )
+        return self
 
 
 class ExtensionConfig(BaseModel):
@@ -48,6 +74,14 @@ class PrivilegeConfig(BaseModel):
     readwrite: bool = False
     readonly: bool = False
     tables: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_access_flags(self) -> "PrivilegeConfig":
+        if self.readwrite and self.readonly:
+            raise ValueError(
+                f"privilege for db '{self.db}': readwrite and readonly cannot both be true"
+            )
+        return self
 
 
 class UserConfig(BaseModel):
@@ -144,7 +178,6 @@ class BaseSQLProvider(ABC):
 
     def __init__(self, config: SQLConfig):
         self.config = config
-        self._connection = None
 
     @abstractmethod
     def connect(self) -> None: ...

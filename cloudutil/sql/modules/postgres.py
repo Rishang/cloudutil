@@ -30,14 +30,15 @@ class ChangeReport(BaseModel):
 
     def __str__(self) -> str:
         base = f"[{self.operation.upper()}] {self.resource_type}: {self.resource_name}"
-        match self.operation:
-            case "update" if self.details:
-                changes = ", ".join(
-                    f"{k}: {v['old']} → {v['new']}" for k, v in self.details.items()
-                )
-                return f"{base} ({changes})"
-            case _:
-                return base
+        if not self.details:
+            return base
+        parts = []
+        for k, v in self.details.items():
+            if isinstance(v, dict) and "old" in v and "new" in v:
+                parts.append(f"{k}: {v['old']} → {v['new']}")
+            else:
+                parts.append(f"{k}: {v}")
+        return f"{base} ({', '.join(parts)})"
 
 
 class PostgreSQLProvider(BaseSQLProvider):
@@ -60,11 +61,11 @@ class PostgreSQLProvider(BaseSQLProvider):
             "user": self.config.provider.username,
             "password": self.config.provider.password,
         }
+        if self.config.provider.ssl_mode:
+            self.conn_params["sslmode"] = self.config.provider.ssl_mode
         if self.config.provider.cert:
-            self.conn_params |= {
-                "sslmode": "verify-full",
-                "sslrootcert": self.config.provider.cert,
-            }
+            self.conn_params.setdefault("sslmode", "verify-full")
+            self.conn_params["sslrootcert"] = self.config.provider.cert
 
         self._conn = psycopg2.connect(**self.conn_params, database="postgres")
         self._conn.autocommit = True
@@ -184,7 +185,10 @@ class PostgreSQLProvider(BaseSQLProvider):
                             )
                         )
                         self._log("update", "extension", f"{db_name}.{ext.name}")
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(
+                            f"ALTER EXTENSION {ext.name} UPDATE failed, skipping: {e}"
+                        )
                         self._log("skip", "extension", f"{db_name}.{ext.name}")
                 else:
                     cur.execute(
@@ -203,14 +207,15 @@ class PostgreSQLProvider(BaseSQLProvider):
             cur.execute(
                 "SELECT 1 FROM pg_roles WHERE rolname = %s", (user_config.name,)
             )
+            exists = cur.fetchone() is not None
             user_sql = sql.SQL(
                 "ALTER USER {} WITH PASSWORD %s"
-                if cur.fetchone()
+                if exists
                 else "CREATE USER {} WITH PASSWORD %s"
             ).format(sql.Identifier(user_config.name))
             cur.execute(user_sql, (user_config.password,))
 
-        op = "update" if cur.statusmessage.startswith("ALTER") else "create"
+        op = "update" if exists else "create"
         details = {"password": {"old": "***", "new": "***"}} if op == "update" else None
         self._log(op, "user", user_config.name, details)
 
@@ -219,6 +224,9 @@ class PostgreSQLProvider(BaseSQLProvider):
     # =========================================================================
 
     def grant_privileges(self, user_name: str, priv: PrivilegeConfig) -> None:
+        if not priv.readwrite and not priv.readonly:
+            self._log("skip", "privilege", f"{user_name}@{priv.db}.{priv.db_schema}")
+            return
         privs = "SELECT, INSERT, UPDATE, DELETE" if priv.readwrite else "SELECT"
         mode = "READ/WRITE" if priv.readwrite else "READ-ONLY"
         schema, user = sql.Identifier(priv.db_schema), sql.Identifier(user_name)
@@ -237,7 +245,7 @@ class PostgreSQLProvider(BaseSQLProvider):
 
             match priv.tables:
                 case []:
-                    access = "NONE"
+                    access = "CONNECT+USAGE only (no table grants)"
                 case tables if "ALL" in tables:
                     cur.execute(
                         sql.SQL(
@@ -341,10 +349,16 @@ class PostgreSQLBuilder:
         if not path.exists():
             raise FileNotFoundError(f"YAML file not found: {yaml_path}")
         with open(path) as f:
-            return self.from_dict(yaml.safe_load(f))
+            data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            raise ValueError(f"YAML file is empty or not a mapping: {yaml_path}")
+        return self.from_dict(data)
 
     def from_yaml_string(self, yaml_string: str) -> "PostgreSQLBuilder":
-        return self.from_dict(yaml.safe_load(yaml_string))
+        data = yaml.safe_load(yaml_string)
+        if not isinstance(data, dict):
+            raise ValueError("YAML input is empty or not a mapping")
+        return self.from_dict(data)
 
     def build(self) -> PostgreSQLProvider:
         if self._config is None:

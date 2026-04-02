@@ -1,6 +1,6 @@
 # SQL Database Configuration Example
-# This file demonstrates all features of the SQL module
-# Use ${ENV_VAR} syntax to reference environment variables for sensitive data
+# This file demonstrates all features of the SQL module.
+# Use ${ENV_VAR} syntax to reference environment variables for sensitive data.
 
 # ============================================================================
 # PROVIDER CONFIGURATION
@@ -8,12 +8,13 @@
 provider:
   name: postgres
   version: 17
-  host: localhost              # or use ${DB_HOST}
+  host: ${DB_HOST}             # or literal: localhost
   port: 5432
-  username: postgres           # or use ${POSTGRES_USER}
-  password: changeme           # or use ${POSTGRES_PASSWORD}
-  cert: null                   # Optional: path to SSL certificate for secure connections
-                               # Example: /etc/ssl/certs/postgres.crt
+  username: ${POSTGRES_USER}   # or literal: postgres
+  password: ${POSTGRES_PASSWORD}
+  # SSL options (both optional):
+  #   ssl_mode: require          # disable | allow | prefer | require | verify-ca | verify-full
+  #   cert: /etc/ssl/pg-ca.crt  # path to CA cert; requires ssl_mode verify-ca or verify-full
 
 # ============================================================================
 # DATABASE CONFIGURATION
@@ -23,9 +24,9 @@ database:
   - name: myapp
     create: true
     extensions:
-      - name: uuid-ossp          # For UUID generation
-      - name: pgcrypto           # For encryption functions
-      - name: pg_trgm            # For full-text search optimization
+      - name: uuid-ossp          # UUID generation
+      - name: pgcrypto           # Encryption functions
+      - name: pg_trgm            # Full-text search trigram indexing
 
   # Analytics database
   - name: analytics
@@ -33,63 +34,63 @@ database:
     extensions:
       - name: pg_stat_statements # Query performance monitoring
 
-  # Development database (create: false means it must already exist)
+  # Pre-existing database — create: false means it must already exist
   - name: legacy_db
     create: false
-    extensions: []
 
 # ============================================================================
 # USER MANAGEMENT
 # ============================================================================
+# Rules:
+#   - readwrite: true  → SELECT, INSERT, UPDATE, DELETE + CREATE on schema
+#   - readonly: true   → SELECT only
+#   - readwrite and readonly cannot both be true (validation error)
+#   - tables: [ALL]    → grant on all current and future tables in the schema
+#   - tables: []       → CONNECT + USAGE granted, no table-level permissions
 users:
-  # Application service account with full read-write access
+  # Application service account — full read/write on all tables
   - name: app_service
-    password: ${APP_SERVICE_PASSWORD}  # Set via: export APP_SERVICE_PASSWORD=...
+    password: ${APP_SERVICE_PASSWORD}
     privileges:
       - db: myapp
         db_schema: public
         readwrite: true
-        readonly: false
         tables:
-          - ALL  # Grant access to all tables in public schema
+          - ALL
 
-  # Read-only analytics user
+  # Read-only analytics user — crosses two databases
   - name: analytics_user
     password: ${ANALYTICS_PASSWORD}
     privileges:
       - db: myapp
         db_schema: public
-        readwrite: false
-        readonly: true
-        tables:
-          - ALL  # Read access to all tables
-
-      - db: analytics
-        db_schema: public
-        readwrite: false
         readonly: true
         tables:
           - ALL
 
-  # Audit/logging user with limited write access
+      - db: analytics
+        db_schema: public
+        readonly: true
+        tables:
+          - ALL
+
+  # Narrow write access — specific tables only
   - name: audit_logger
     password: ${AUDIT_PASSWORD}
     privileges:
       - db: myapp
         db_schema: public
         readwrite: true
-        readonly: false
         tables:
-          - audit_logs    # Can write to specific tables only
+          - audit_logs
           - events
 
-  # Schema-specific user with restricted access
+  # Reporting user — read access to selected tables
   - name: reports_user
     password: ${REPORTS_PASSWORD}
     privileges:
       - db: myapp
         db_schema: public
-        readwrite: false
         readonly: true
         tables:
           - users
@@ -98,107 +99,63 @@ users:
           - orders
 
 # ============================================================================
-# CUSTOM SQL (optional — runs after databases, extensions, users, privileges)
+# CUSTOM SQL  (optional — runs after databases, extensions, users, privileges)
 # ============================================================================
-# custom_sql:
-#   - name: example_ddl
-#     database: myapp
-#     query: |
-#       CREATE TABLE IF NOT EXISTS public.example (id SERIAL PRIMARY KEY);
-#   - name: parameterized_insert
-#     database: myapp
-#     query: INSERT INTO public.example DEFAULT VALUES
-#     params: []
+custom_sql:
+  # Plain DDL — idempotent CREATE
+  - name: schema_migrations_table
+    database: myapp
+    query: |
+      CREATE TABLE IF NOT EXISTS public._schema_migrations (
+        id          SERIAL PRIMARY KEY,
+        version     TEXT        NOT NULL UNIQUE,
+        applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+  # Parameterized DML — use params: for untrusted / variable input
+  - name: seed_settings
+    database: myapp
+    query: |
+      INSERT INTO public.app_settings (key, value)
+      VALUES (%s, %s)
+      ON CONFLICT (key) DO NOTHING
+    params:
+      - maintenance_mode
+      - "false"
+
+  # Jinja template — interpolate values from template_context
+  - name: create_index
+    database: myapp
+    query: "CREATE INDEX IF NOT EXISTS idx_{{ table }}_id ON public.{{ table }} (id);"
+    template_context:
+      table: users
+
+  # Jinja + environment variable injection (inject_env: true by default)
+  - name: record_deploy_env
+    database: myapp
+    query: |
+      INSERT INTO public._schema_migrations (version)
+      VALUES ('{{ env.APP_VERSION }}')
+      ON CONFLICT (version) DO NOTHING
+
+  # Include an external SQL file via loader_path
+  # - name: from_file
+  #   database: myapp
+  #   loader_path: ./sql/fragments
+  #   query: "{% include 'bootstrap.sql' %}"
 
 # ============================================================================
-# ENVIRONMENT VARIABLES SETUP
+# ENVIRONMENT VARIABLES REQUIRED
 # ============================================================================
-# Before running, set these environment variables:
-#
+# export DB_HOST=prod-db.example.com
 # export POSTGRES_USER=postgres
 # export POSTGRES_PASSWORD=your_admin_password
-# export DB_HOST=prod-db.example.com
 # export APP_SERVICE_PASSWORD=app_service_password
 # export ANALYTICS_PASSWORD=analytics_password
 # export AUDIT_PASSWORD=audit_password
 # export REPORTS_PASSWORD=reports_password
+# export APP_VERSION=1.2.3   # used by the custom_sql Jinja example above
 #
-# Then execute:
-# cu sql validate example.yaml
-# cu sql execute --config-file example.yaml
-
-# ============================================================================
-# KUBERNETES DEPLOYMENT EXAMPLE
-# ============================================================================
-# You can use this configuration in Kubernetes with a ConfigMap and Secret:
-#
-# apiVersion: v1
-# kind: ConfigMap
-# metadata:
-#   name: sql-config
-# data:
-#   config.yaml: |
-#     (contents of this file)
-#
-# ---
-# apiVersion: v1
-# kind: Secret
-# metadata:
-#   name: sql-secrets
-# type: Opaque
-# stringData:
-#   POSTGRES_PASSWORD: your-password
-#   APP_SERVICE_PASSWORD: app-password
-#   ANALYTICS_PASSWORD: analytics-password
-#   AUDIT_PASSWORD: audit-password
-#   REPORTS_PASSWORD: reports-password
-#
-# ---
-# apiVersion: batch/v1
-# kind: Job
-# metadata:
-#   name: sql-setup
-# spec:
-#   template:
-#     spec:
-#       serviceAccountName: sql-setup-sa
-#       containers:
-#       - name: sql-setup
-#         image: cloudutil:latest
-#         command: ["cu", "sql", "execute", "--config-file", "/config/config.yaml"]
-#         env:
-#         - name: POSTGRES_PASSWORD
-#           valueFrom:
-#             secretKeyRef:
-#               name: sql-secrets
-#               key: POSTGRES_PASSWORD
-#         - name: APP_SERVICE_PASSWORD
-#           valueFrom:
-#             secretKeyRef:
-#               name: sql-secrets
-#               key: APP_SERVICE_PASSWORD
-#         - name: ANALYTICS_PASSWORD
-#           valueFrom:
-#             secretKeyRef:
-#               name: sql-secrets
-#               key: ANALYTICS_PASSWORD
-#         - name: AUDIT_PASSWORD
-#           valueFrom:
-#             secretKeyRef:
-#               name: sql-secrets
-#               key: AUDIT_PASSWORD
-#         - name: REPORTS_PASSWORD
-#           valueFrom:
-#             secretKeyRef:
-#               name: sql-secrets
-#               key: REPORTS_PASSWORD
-#         - name: DB_HOST
-#           value: "postgres-service.database"
-#         volumeMounts:
-#         - name: config
-#           mountPath: /config
-#       volumes:
-#       - name: config
-#         configMap:
-#           name: sql-config
-#       restartPolicy: Never
+# Then:
+#   cu sql validate example.yaml
+#   cu sql execute --config-file example.yaml

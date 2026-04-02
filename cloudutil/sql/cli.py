@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import typer
+from pydantic import ValidationError
 from rich import print
 
 from cloudutil.sql.apply import apply_postgres_config, validate_postgres_config
@@ -46,11 +47,6 @@ def execute_config(
     """
     try:
         print(f"[bold blue]Loading configuration from:[/bold blue] {config_file}")
-        _require_postgres(
-            config_file.read_text().split("name:")[1].split()[0]
-            if False
-            else "postgres"
-        )  # provider comes from the parsed config
 
         changed, changes = apply_postgres_config(config_path=config_file)
 
@@ -70,7 +66,7 @@ def execute_config(
     except FileNotFoundError as e:
         print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(1)
-    except ValueError as e:
+    except (ValueError, ValidationError) as e:
         print(f"[bold red]Configuration Error:[/bold red] {e}")
         raise typer.Exit(1)
     except Exception as e:
@@ -109,9 +105,13 @@ def validate_config(
 
         print("[bold]Provider:[/bold]")
         p = cfg.provider
+        ssl_info = ""
+        if p.ssl_mode:
+            ssl_info = f"  ssl_mode={p.ssl_mode}"
+        if p.cert:
+            ssl_info += f"  cert={p.cert}"
         print(
-            f"  • {p.name} v{p.version}  {p.host}:{p.port}  user={p.username}"
-            + (f"  ssl={p.cert}" if p.cert else "")
+            f"  • {p.name} v{p.version}  {p.host}:{p.port}  user={p.username}{ssl_info}"
         )
 
         print("\n[bold]Databases:[/bold]")
@@ -133,7 +133,7 @@ def validate_config(
                 tables = "ALL" if "ALL" in priv.tables else f"{len(priv.tables)} tables"
                 print(f"    - {priv.db}.{priv.db_schema}: {access} on {tables}")
 
-    except (FileNotFoundError, ValueError) as e:
+    except (FileNotFoundError, ValueError, ValidationError) as e:
         print(f"[bold red]Validation Error:[/bold red] {e}")
         raise typer.Exit(1)
     except Exception as e:
@@ -173,7 +173,8 @@ provider:
   port: 5432
   username: postgres       # or ${POSTGRES_USER}
   password: changeme       # or ${POSTGRES_PASSWORD}
-  cert: null               # optional: path to SSL cert
+  cert: null               # optional: path to SSL root cert
+  ssl_mode: null           # optional: disable|allow|prefer|require|verify-ca|verify-full
 
 database:
   - name: myapp

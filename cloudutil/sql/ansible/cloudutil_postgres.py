@@ -7,7 +7,6 @@ from typing import Any
 from ansible.module_utils.basic import AnsibleModule
 
 try:
-    import yaml
     from cloudutil.sql.modules.postgres import PostgreSQLBuilder
 
     HAS_DEPS = True
@@ -94,7 +93,11 @@ def _build_provider(params: dict[str, Any]):
         case {"config_file": path} if path:
             return PostgreSQLBuilder().from_yaml(path).build()
         case {"config_string": s} if s:
-            return PostgreSQLBuilder().from_dict(yaml.safe_load(s)).build()
+            return PostgreSQLBuilder().from_yaml_string(s).build()
+        case _:
+            raise ValueError(
+                "No valid config source provided (config, config_file, or config_string)"
+            )
 
 
 def main() -> None:

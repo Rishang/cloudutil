@@ -2,14 +2,16 @@
 
 ## Overview
 
-Simple, type-safe database configuration management for PostgreSQL.
+Idempotent, type-safe database provisioning for PostgreSQL — databases, extensions, users, privileges, and optional custom SQL in one declarative YAML file.
+
+---
 
 ## Quick Start
 
-### 1. Create Configuration File
+### 1. Create a configuration file
 
 ```yaml
-provider: 
+provider:
   name: postgres
   version: 17
   host: localhost
@@ -34,7 +36,20 @@ users:
           - ALL
 ```
 
-### 2. Execute Configuration
+### 2. Run it
+
+```bash
+export POSTGRES_PASSWORD=secret
+export APP_PASSWORD=apppass
+
+# Validate first (no DB connection)
+cu sql validate config.yaml
+
+# Apply
+cu sql execute --config-file config.yaml
+```
+
+Or from Python:
 
 ```python
 from cloudutil.sql.modules import PostgreSQLBuilder
@@ -44,135 +59,273 @@ with provider:
     provider.execute()
 ```
 
-Or via CLI:
-```bash
-export POSTGRES_PASSWORD=secret
-export APP_PASSWORD=apppass
-cu sql execute --config-file config.yaml
-```
+---
 
-## Features
-
-- **Check-first pattern**: Verifies current state before making changes
-- **Change tracking**: Reports CREATE/UPDATE/SKIP for each operation
-- **Idempotent**: Safe to run multiple times
-- **Environment variables**: Use `${VAR_NAME}` for sensitive data
-- **Custom SQL**: Optional parameterized statements after standard provisioning
-- **Extensible**: Easy to add MySQL, MariaDB, etc.
-
-## Configuration
+## Configuration Reference
 
 ### Provider
+
 ```yaml
 provider:
   name: postgres
   version: 17
-  host: localhost
+  host: localhost          # or ${DB_HOST}
   port: 5432
-  username: postgres
+  username: postgres       # or ${POSTGRES_USER}
   password: ${POSTGRES_PASSWORD}
-  cert: null  # Optional SSL certificate path
+
+  # SSL — both fields are optional and independent
+  ssl_mode: verify-full    # disable | allow | prefer | require | verify-ca | verify-full
+  cert: /etc/ssl/pg-ca.crt # path to CA cert; requires ssl_mode verify-ca or verify-full
 ```
 
+`username` and `password` support `${ENV_VAR}` substitution. `ssl_mode` is validated at config parse time — unknown values are rejected. If `cert` is set, `ssl_mode` must be `verify-ca` or `verify-full` (defaults to `verify-full` when `cert` is present and `ssl_mode` is not set).
+
 ### Databases
+
 ```yaml
 database:
   - name: myapp
-    create: true
+    create: true      # false = assume it already exists, skip CREATE
     extensions:
       - name: uuid-ossp
       - name: pgcrypto
 ```
 
+Each database is checked before any action:
+- **Not found** → `CREATE DATABASE`
+- **Wrong owner** → `ALTER DATABASE … OWNER TO`
+- **Already correct** → `SKIP`
+
+Extensions follow the same pattern:
+- **Not installed** → `CREATE EXTENSION IF NOT EXISTS`
+- **Already installed** → `ALTER EXTENSION … UPDATE` (skips gracefully with a warning if the extension doesn't support updates)
+
 ### Users & Privileges
+
 ```yaml
 users:
-  - name: app_user
-    password: ${APP_PASSWORD}
+  - name: app_readwrite
+    password: ${APP_RW_PASSWORD}
     privileges:
       - db: myapp
         db_schema: public
-        readwrite: true    # or readonly: true
+        readwrite: true        # SELECT, INSERT, UPDATE, DELETE + CREATE on schema
         tables:
-          - ALL            # or specific tables
+          - ALL                # all current and future tables
+
+  - name: app_readonly
+    password: ${APP_RO_PASSWORD}
+    privileges:
+      - db: myapp
+        db_schema: public
+        readonly: true         # SELECT only
+        tables:
+          - users
+          - orders
 ```
 
-## CLI Commands
+**Access modes:**
 
-```bash
-# Validate configuration
-cu sql validate config.yaml
+| `readwrite` | `readonly` | SQL granted |
+|-------------|------------|-------------|
+| `true` | `false` | `SELECT, INSERT, UPDATE, DELETE` + `CREATE ON SCHEMA` |
+| `false` | `true` | `SELECT` |
+| `false` | `false` | `GRANT CONNECT` + `GRANT USAGE` only (no table grants) |
+| `true` | `true` | **Validation error** — mutually exclusive |
 
-# Execute configuration
-cu sql execute --config-file config.yaml
+**`tables` values:**
 
-# Generate sample configuration
-cu sql init
-```
+| Value | Behaviour |
+|-------|-----------|
+| `[ALL]` | `GRANT … ON ALL TABLES` + `ALTER DEFAULT PRIVILEGES` (covers future tables) |
+| `[users, orders, …]` | Per-table grants only |
+| `[]` | `GRANT CONNECT` + `GRANT USAGE` on schema — no table-level permissions |
 
-## Ansible
+Users are created if missing or have their password updated if they already exist. All GRANTs are idempotent in Postgres (re-running is safe).
 
-Install `cloudutil` into the Python environment used by Ansible, then use the **`cloudutil_postgres`** module (see `cloudutil/sql/ansible/cloudutil_postgres.py`).
+### Custom SQL
 
-```yaml
-- name: Apply SQL config from file
-  cloudutil_postgres:
-    config_path: /opt/app/sql/config.yaml
-  environment:
-    POSTGRES_PASSWORD: "{{ vault_postgres_password }}"
-  delegate_to: localhost
-  connection: local
-```
-
-- **`state: present`** (default) — connect and apply (same as `cu sql execute`).
-- **`state: validated`** — parse and validate only (no DB connection).
-
-See **`ansible/README.md`** at the repository root for `library` / `ansible.cfg` setup.
-
-## Custom SQL
-
-Optional arbitrary SQL runs **after** databases, extensions, users, and privileges (useful for seeds, extra schema, or one-off DDL).
-
-Each entry’s **`query`** is a **Jinja2** template string. It is rendered with **`jinja2.Environment(loader=FileSystemLoader(loader_path))`** so you can use **`{% include 'file.sql' %}`** relative to **`loader_path`** (default **`"."`**).
-
-When **`inject_env: true`** (default), the environment sets **`env.globals["env"] = os.environ`**, so templates use **`{{ env.DB_HOST }}`**, **`{{ env.AWS_REGION }}`**, **`{{ env.HOME }}`**, etc. Extra variables come from **`template_context`** (passed to **`render(**template_context)`**). The result is stored in **`query_raw`** for execution.
+Optional arbitrary SQL that runs **after** databases, extensions, users, and privileges.
 
 ```yaml
 custom_sql:
-  - name: ensure_public_schema
+  # Plain DDL
+  - name: migrations_table
     database: myapp
     query: |
-      CREATE TABLE IF NOT EXISTS public._schema_migrations (
+      CREATE TABLE IF NOT EXISTS public._migrations (
         id SERIAL PRIMARY KEY,
+        version TEXT NOT NULL UNIQUE,
         applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
-  - name: seed_with_params
+
+  # Parameterized DML — use params: for variable/untrusted input
+  - name: seed_settings
     database: myapp
     query: INSERT INTO public.app_settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING
     params:
       - maintenance_mode
       - "false"
-  - name: jinja_table_name
+
+  # Jinja template — interpolate template_context values
+  - name: create_index
     database: myapp
-    query: "CREATE INDEX IF NOT EXISTS idx_{{ table }} ON public.{{ table }} (id);"
+    query: "CREATE INDEX IF NOT EXISTS idx_{{ table }}_id ON public.{{ table }} (id);"
     template_context:
       table: users
-  - name: from_env_and_include
+
+  # Environment variables via {{ env.VAR }} (inject_env: true by default)
+  - name: record_version
     database: myapp
-    loader_path: "./sql/fragments"
     query: |
-      {% include 'header.sql' %}
-      INSERT INTO public.meta (k, v) VALUES ('env', '{{ env.MY_ENV_VAR }}');
+      INSERT INTO public._migrations (version)
+      VALUES ('{{ env.APP_VERSION }}')
+      ON CONFLICT (version) DO NOTHING
+
+  # Include external SQL files
+  - name: from_file
+    database: myapp
+    loader_path: ./sql/fragments   # root for FileSystemLoader
+    query: "{% include 'bootstrap.sql' %}"
 ```
 
-- **`query`** — Jinja template source string; `query_raw` is set to the rendered SQL in `model_post_init`.
-- **`query_raw`** — computed from `query` + `template_context`; do not set in YAML (it is overwritten when the model is built).
-- **`loader_path`** — directory (or list of directories) for `FileSystemLoader` (`"."` by default). Used for `{% include %}` / `{% import %}` from files on disk.
-- **`inject_env`** — if `true` (default), **`env.globals["env"] = os.environ`** so use **`{{ env.VAR_NAME }}`** in templates.
-- **`template_context`** — keyword arguments passed to **`render()`** (e.g. `table: users` for `{{ table }}`).
-- **`database`** — connect to this database (must exist or be created earlier in `database:`).
-- **`params`** — optional bound parameters for `%s` placeholders (use with untrusted input only via parameters, not string interpolation).
-- **`name`** — optional label for logs and change reports.
+**Fields:**
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `query` | required | Jinja2 template string; rendered to `query_raw` at parse time |
+| `database` | `postgres` | Target database (must exist or be created earlier in `database:`) |
+| `params` | `[]` | Positional `%s` bind parameters |
+| `template_context` | `{}` | Variables passed to `render()` |
+| `loader_path` | `"."` | Directory (or list) for `FileSystemLoader` (`{% include %}` / `{% import %}`) |
+| `inject_env` | `true` | Exposes `os.environ` as `{{ env.VAR }}` in templates |
+| `name` | `null` | Label shown in logs and change reports |
+
+---
+
+## CLI Commands
+
+```bash
+# Generate a starter config
+cu sql init
+cu sql init -o my-config.yaml
+
+# Validate without connecting
+cu sql validate config.yaml
+
+# Apply
+cu sql execute --config-file config.yaml
+cu sql execute -c config.yaml
+```
+
+---
+
+## Ansible
+
+Install `cloudutil` into the Python environment used by Ansible, then use the `cloudutil_postgres` module (`cloudutil/sql/ansible/cloudutil_postgres.py`).
+
+The module accepts exactly one of `config`, `config_file`, or `config_string`:
+
+```yaml
+# From an inline dict
+- name: Provision PostgreSQL
+  cloudutil_postgres:
+    config:
+      provider:
+        name: postgres
+        version: 17
+        host: localhost
+        port: 5432
+        username: postgres
+        password: "{{ vault_postgres_password }}"
+      database:
+        - name: myapp
+          create: true
+      users:
+        - name: app_user
+          password: "{{ vault_app_password }}"
+          privileges:
+            - db: myapp
+              readwrite: true
+              tables: [ALL]
+
+# From a YAML file on the target host
+- name: Provision PostgreSQL from file
+  cloudutil_postgres:
+    config_file: /etc/myapp/pg_config.yaml
+  environment:
+    POSTGRES_PASSWORD: "{{ vault_postgres_password }}"
+
+# From a YAML string (e.g. looked up from a file on the controller)
+- name: Provision PostgreSQL from string
+  cloudutil_postgres:
+    config_string: "{{ lookup('file', 'pg_config.yaml') }}"
+```
+
+**Return values:**
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `changed` | bool | `true` if any resource was created, updated, or executed |
+| `changes` | list | Full list of `ChangeReport` dicts |
+| `summary` | dict | `{total, create, update, skip, execute}` counts |
+
+---
+
+## Features
+
+- **Check-first / idempotent** — verifies current state before issuing any SQL; safe to re-run
+- **Change tracking** — every operation emits a structured `ChangeReport` (`create` / `update` / `skip` / `execute`)
+- **Environment variable substitution** — `${VAR}` in `username`, `password`, and custom SQL templates
+- **SSL control** — explicit `ssl_mode` field plus optional CA cert path
+- **Jinja2 custom SQL** — template rendering, file includes, env injection, bind params
+- **Conflict validation** — `readwrite` and `readonly` cannot both be true; `ssl_mode` values are validated at parse time
+
+---
+
+## Example Output
+
+```
+============================================================
+Databases
+============================================================
+[CREATE] database: myapp
+[SKIP] database: analytics
+[UPDATE] database: legacy (owner: old_admin → postgres)
+
+============================================================
+Extensions
+============================================================
+[CREATE] extension: myapp.uuid-ossp
+[UPDATE] extension: myapp.pgcrypto
+[SKIP] extension: myapp.pg_trgm
+
+============================================================
+Users
+============================================================
+[CREATE] user: app_service
+[UPDATE] user: reports_user (password: *** → ***)
+
+============================================================
+Privileges
+============================================================
+[CREATE] privilege: app_service@myapp.public (access: READ/WRITE (ALL))
+[CREATE] privilege: reports_user@myapp.public (access: READ-ONLY (4 tables))
+
+============================================================
+Custom SQL
+============================================================
+[EXECUTE] custom_sql: myapp/migrations_table (rowcount: -1)
+
+============================================================
+Summary
+============================================================
+Total: 8 | Created: 4 | Updated: 2 | Skipped: 1 | Executed: 1
+Complete
+```
+
+---
 
 ## Kubernetes
 
@@ -185,47 +338,35 @@ spec:
   template:
     spec:
       containers:
-      - name: sql-setup
-        image: cloudutil:latest
-        command: ["cu", "sql", "execute", "--config-file", "/config/config.yaml"]
-        env:
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: sql-secrets
-              key: password
-        volumeMounts:
-        - name: config
-          mountPath: /config
+        - name: sql-setup
+          image: cloudutil:latest
+          command: ["cu", "sql", "execute", "--config-file", "/config/config.yaml"]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sql-secrets
+                  key: POSTGRES_PASSWORD
+            - name: APP_SERVICE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sql-secrets
+                  key: APP_SERVICE_PASSWORD
+          volumeMounts:
+            - name: config
+              mountPath: /config
       volumes:
-      - name: config
-        configMap:
-          name: sql-config
+        - name: config
+          configMap:
+            name: sql-config
       restartPolicy: Never
 ```
 
-## Example Output
-
-```
-Databases
-============================================================
-[CREATE] database: myapp
-[SKIP] database: analytics
-[UPDATE] database: legacy (owner: admin → postgres)
-
-Users
-============================================================
-[CREATE] user: app_user
-[UPDATE] user: admin (password: *** → ***)
-
-Summary
-============================================================
-Total: 5 | Created: 2 | Updated: 2 | Skipped: 1
-Complete
-```
+---
 
 ## See Also
 
-- `example.yaml` - Comprehensive configuration example
-- `base.py` - Schema definitions
-- `postgres.py` - PostgreSQL provider implementation (302 lines)
+- `example.yaml` — comprehensive configuration with all features
+- `modules/base.py` — Pydantic schema definitions (`ProviderConfig`, `DatabaseConfig`, `UserConfig`, `PrivilegeConfig`, `CustomSQLQuery`, `SQLConfig`)
+- `modules/postgres.py` — PostgreSQL provider and builder
+- `ansible/cloudutil_postgres.py` — Ansible module wrapper
