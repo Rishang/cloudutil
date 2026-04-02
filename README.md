@@ -20,6 +20,7 @@ pip install -U git+https://github.com/Rishang/cloudutil.git
   - [📦 Installation](#-installation)
     - [Requirements](#requirements)
   - [🚀 Usage](#-usage)
+    - [Top-level commands](#top-level-commands)
     - [AWS Operations](#aws-operations)
       - [Console Login](#console-login)
       - [SSM Parameter Management](#ssm-parameter-management)
@@ -29,8 +30,9 @@ pip install -U git+https://github.com/Rishang/cloudutil.git
       - [Advanced AWS Usage](#advanced-aws-usage)
         - [Custom Policy for Console Login](#custom-policy-for-console-login)
         - [Environment Variables](#environment-variables)
-    - [Azure Operations](#azure-operations)
+    - [Azure Operations (`az`)](#azure-operations-az)
       - [Key Vault Secrets](#key-vault-secrets)
+    - [SQL Operations](#sql-operations)
     - [Kubernetes Operations](#kubernetes-operations)
       - [Kubernetes Secrets](#kubernetes-secrets)
       - [Kubernetes ConfigMaps](#kubernetes-configmaps)
@@ -40,7 +42,6 @@ pip install -U git+https://github.com/Rishang/cloudutil.git
       - [Shell History](#shell-history)
     - [Taskfile Operations](#taskfile-operations)
     - [Password Pusher Operations](#password-pusher-operations)
-    - [SQL Operations](#sql-operations)
   - [🎯 Interactive Selection](#-interactive-selection)
   - [📋 Command Reference](#-command-reference)
   - [🔧 Development](#-development)
@@ -48,14 +49,14 @@ pip install -U git+https://github.com/Rishang/cloudutil.git
 
 ## ✨ Features
 
-- 🚀 **Interactive AWS Console Login** - Generate federated console URLs with custom policies
+- 🚀 **Interactive AWS Console Login** - Generate federated console URLs with a scoped IAM policy file
 - 🔐 **SSM Parameter Management** - Search and retrieve parameters with fuzzy finding
 - 📡 **SSM Instance Connections** - Direct SSH and port forwarding through Systems Manager
 - 🔑 **Secrets Manager Integration** - Interactive secret browsing with JSON formatting
 - 🎯 **Fuzzy Selection** - Powered by `fzf` for lightning-fast interactive selection
 - 🎨 **Beautiful Output** - Rich terminal interface with colors and formatting
-- ⚡ **Profile & Region Support** - Seamless switching between AWS profiles and regions
-- 🐍 **SQL Database Management** - Simple, type-safe database configuration management for PostgreSQL
+- ⚡ **Profile & Region Support** - Seamless switching between AWS profiles and regions (where supported per command)
+- 🐍 **SQL Database Management** - Declarative PostgreSQL configuration via YAML (`validate`, `execute`, `init`)
 - 🎛️ **Kubernetes Operations** - Interactive Kubernetes secrets and ConfigMaps browsing via `kubectl`
 - 🧰 **OS Utils** - YAML diff checker for cross-file config comparisons using JMESPath
 - 🗂️ **Taskfile Passthrough** - Run local Taskfile tasks via `cu task ...` with interactive terminal support
@@ -97,24 +98,35 @@ sudo apt install fzf
 
 ## 🚀 Usage
 
+### Top-level commands
+
+The main entrypoint is `cu` (see `[project.scripts]` in `pyproject.toml`). Subcommands are wired in `cloudutil/cli.py`:
+
+| Command | Module | Purpose |
+|--------|--------|---------|
+| `cu aws` | `cloudutil.aws.cli` | AWS (login, SSM, Secrets Manager, decode message) |
+| `cu az` | `cloudutil.azure.cli` | Azure Key Vault secrets |
+| `cu sql` | `cloudutil.sql.cli` | PostgreSQL config validate / execute / init |
+| `cu os` | `cloudutil.os_utils.cli` | YAML diff, shell history |
+| `cu k` | `cloudutil.k8s.cli` | Kubernetes secrets, ConfigMaps, context switch |
+| `cu pwpush` | `cloudutil.pwpush.cli` | Password Pusher |
+| `cu task` | `cloudutil.task.cli` | Passthrough to the `task` binary |
+
 ### AWS Operations
 
 #### Console Login
 
-Generate a temporary AWS console login URL with optional policy restrictions:
+Generates a temporary AWS console login URL using STS `GetFederationToken`. A **policy JSON file is required** (`-f` / `--policy-file`).
 
 ```bash
-# Basic console login
-cu aws login
+# Policy file is required — example: read-only S3 policy in ./read-only-policy.json
+cu aws login -f ./read-only-policy.json
 
-# With custom profile and region
-cu aws login --profile my-profile --region us-west-2
-
-# With custom duration and policy file
-cu aws login --duration 3600 --policy-file ./read-only-policy.json
+# With profile and session duration (hours, default 2, range 1–24)
+cu aws login -f ./read-only-policy.json --profile my-profile --duration 4
 
 # Just print URL (don't open browser)
-cu aws login --no-open
+cu aws login -f ./read-only-policy.json --no-open
 ```
 
 **Example output:**
@@ -128,7 +140,7 @@ cu aws login --no-open
 Interactively search and retrieve SSM parameters:
 
 ```bash
-# Search all parameters
+# Search parameters (default prefix /)
 cu aws ssm-parameters
 
 # Search with prefix
@@ -213,7 +225,7 @@ Value (JSON):
 Decode an AWS authorization failure message using IAM's `decode_authorization_message` API:
 
 ```bash
-# Decode a message interactively (opens vim)
+# Decode a message interactively (opens $EDITOR, default vim)
 cu aws decode-message
 
 # Decode a specific message
@@ -267,7 +279,7 @@ Create a JSON policy file to restrict console permissions:
 ```
 
 ```bash
-cloudutil aws-login --policy-file ./s3-read-only.json
+cu aws login -f ./s3-read-only.json
 ```
 
 ##### Environment Variables
@@ -280,7 +292,9 @@ export AWS_DEFAULT_REGION=us-west-2
 cu aws ssm-parameters  # Uses the environment settings
 ```
 
-### Azure Operations
+### Azure Operations (`az`)
+
+Azure commands are under **`cu az`** (not `cu azure`).
 
 #### Key Vault Secrets
 
@@ -288,10 +302,13 @@ Browse and retrieve Azure Key Vault secrets with automatic JSON parsing:
 
 ```bash
 # Search all secrets in a vault
-cu azure secrets --vault my-key-vault
+cu az secrets --vault my-key-vault
 
 # Filter by name prefix
-cu azure secrets --vault my-key-vault --filter "prod-"
+cu az secrets --vault my-key-vault --filter "prod-"
+
+# JSON output (quieter logging)
+cu az secrets --vault my-key-vault -o json
 ```
 
 **Example output:**
@@ -308,105 +325,23 @@ Value:
 super-secret-value
 ```
 
-### OS Utils
-
-Utilities for local/dev workflows and config validation tasks.
-
-#### YAML Diff Checker
-
-Compare YAML nodes across files at a given JMESPath location and report:
-- missing keys on either side
-- value differences
-- matching keys
-- ignored keys based on patterns
-
-```bash
-# Use default config path: ./ydiff_config.yaml
-cu os ydiff
-
-# Use a custom config file
-cu os ydiff --config ./cloudutil/os_utils/example.yaml
-```
-
-**Config format (`ydiff_config.yaml`):**
-
-```yaml
-ydiff:
-  - jsmec: "configMap"
-    files:
-      - app-v1: "./values/main.yaml"
-      # $branch is resolved to the current git branch name for that file path.
-      - $branch: "./values/feature.yaml"
-    ignore_patterns:
-      - test
-      - dev
-```
-
-Notes:
-- `jsmec` is the JMESPath expression used to extract the node to compare.
-- Every item under `files` is a single-key mapping: `{alias: path}`.
-- At least 2 files are required per check.
-- You can use `$branch` as an alias to auto-resolve the current git branch name for that file path.
-
-#### Shell History
-
-Search shell history with fzf.
-
-```bash
-cu os history
-```
-
-### Taskfile Operations
-
-Run [Taskfile](https://taskfile.dev/) tasks directly through CloudUtil.
-
-`cu task` forwards arguments to `task` and preserves interactive TTY behavior, so prompts/selectors work as expected.
-
-```bash
-# Run default task
-cu task default
-
-# Run any task with additional flags/args
-cu task deploy -- --env prod
-
-# Use a custom Taskfile
-cu task --yaml-file ./Taskfile.yml default
-
-# Open task's own help
-cu task --help
-```
-
-### Password Pusher Operations
-
-Manage temporary secret sharing with [Password Pusher](https://pwpush.com/).
-
-```bash
-# Save Password Pusher config
-cu pwpush config --source https://pwpush.com --token <api-token>
-
-# Optional legacy/self-hosted auth mode
-cu pwpush config --source https://pwpush.example.com --token <api-token> --email you@example.com
-
-# Send a secret (opens $EDITOR if --file is omitted)
-cu pwpush send --note "prod db password" --days 7 --views 5
-
-# Send secret from file
-cu pwpush send --file ./secret.txt --note "vpn creds"
-
-# List active pushes
-cu pwpush list-active
-
-# Generate a random password
-cu pwpush pwgen --length 24
-```
-
-Notes:
-- Config is stored at `~/.config/cu/psst.json`.
-- `send` uses bearer auth by default; if `--email` is configured, it uses legacy auth headers.
-
 ### SQL Operations
 
-In progress...
+PostgreSQL-oriented workflows (see `cloudutil/sql/cli.py`):
+
+```bash
+# Generate a sample YAML template (default: config.yaml)
+cu sql init
+cu sql init -o my-config.yaml
+
+# Validate configuration without connecting
+cu sql validate my-config.yaml
+
+# Apply configuration
+cu sql execute --config-file my-config.yaml
+# short form:
+cu sql execute -c my-config.yaml
+```
 
 ### Kubernetes Operations
 
@@ -426,6 +361,8 @@ cu k secrets
 cu k secrets --namespace default
 
 # Explicitly scan all namespaces
+cu k secrets --all-namespaces
+# or
 cu k secrets -A
 
 # Choose namespace interactively first, then pick secrets
@@ -454,6 +391,8 @@ cu k configmaps --namespace kube-system
 
 # Explicitly scan all namespaces
 cu k configmaps --all-namespaces
+# or
+cu k configmaps -A
 
 # Choose namespace interactively first, then pick ConfigMaps
 cu k configmaps --select-namespace
@@ -479,7 +418,103 @@ cu k ctx
 
 Notes:
 - Context names are read from your current kubeconfig (`kubectl config view -o json`).
-- The selected context is applied with `kubectl config use-context`.
+- The selected context is applied with `kubectl config use-context` (process is replaced via `exec`).
+
+### OS Utils
+
+Utilities for local/dev workflows and config validation tasks.
+
+#### YAML Diff Checker
+
+Compare YAML nodes across files at a given JMESPath location and report:
+- missing keys on either side
+- value differences
+- matching keys
+- ignored keys based on patterns
+
+Default config file: `ydiff_config.yaml` in the current directory.
+
+```bash
+cu os ydiff
+
+# Custom config
+cu os ydiff --config ./cloudutil/os_utils/example.yaml
+cu os ydiff -c ./my-ydiff.yaml
+```
+
+**Config format (`ydiff_config.yaml`):**
+
+```yaml
+ydiff:
+  - jsmec: "configMap"
+    files:
+      - app-v1: "./values/main.yaml"
+      # $branch is resolved to the current git branch name for that file path.
+      - $branch: "./values/feature.yaml"
+    ignore_patterns:
+      - test
+      - dev
+```
+
+Notes:
+- `jsmec` is the JMESPath expression used to extract the node to compare.
+- Every item under `files` is a single-key mapping: `{alias: path}`.
+- At least 2 files are required per check.
+- You can use `$branch` as an alias to auto-resolve the current git branch name for that file path.
+
+#### Shell History
+
+Search shell history with fzf (supports zsh and bash).
+
+```bash
+cu os history
+```
+
+### Taskfile Operations
+
+Run [Taskfile](https://taskfile.dev/) tasks through CloudUtil. `cu task` replaces the current process with `task`, forwarding extra arguments for full interactive TTY behavior.
+
+Default Taskfile: `~/.config/cu/Taskfile.yml`. Default directory: current working directory.
+
+```bash
+# Run default task
+cu task default
+
+# Run any task with additional flags/args (after --)
+cu task deploy -- --env prod
+
+# Custom Taskfile and working directory
+cu task -t ./Taskfile.yml -d /path/to/project default
+cu task --taskfile ./Taskfile.yml --directory . deploy
+
+# Task passthrough help
+cu task --help
+```
+
+### Password Pusher Operations
+
+Manage temporary secret sharing with [Password Pusher](https://pwpush.com/) (`cloudutil/pwpush/cli.py`).
+
+```bash
+# Save Password Pusher config (requires --token, --source, and --email)
+cu pwpush config --source https://pwpush.com --token <api-token> --email you@example.com
+
+# Send a secret (opens $EDITOR if --file is omitted)
+cu pwpush send --note "prod db password" --days 7 --views 5
+
+# Send secret from file
+cu pwpush send --file ./secret.txt --note "vpn creds"
+
+# List active pushes
+cu pwpush list-active
+
+# Generate a random password
+cu pwpush pwgen --length 24
+```
+
+Notes:
+- Config is stored at `~/.config/cu/psst.json`.
+- `send` uses bearer auth when no email is stored in config; legacy header auth when `email` is present in the saved config.
 
 ## 🎯 Interactive Selection
 
@@ -492,23 +527,35 @@ All commands use `fzf` for interactive selection, providing:
 
 ## 📋 Command Reference
 
+| Group | Commands |
+|-------|----------|
+| `cu aws` | `login`, `ssm-parameters`, `ec2-ssm`, `secrets`, `decode-message` |
+| `cu az` | `secrets` |
+| `cu sql` | `execute`, `validate`, `init` |
+| `cu os` | `ydiff`, `history` |
+| `cu k` | `secrets`, `configmaps`, `ctx` |
+| `cu pwpush` | `config`, `send`, `list-active`, `pwgen` |
+| `cu task` | forwards to `task -t <taskfile> -d <dir> ...` |
+
+Run `cu --help` and `cu <group> --help` for live usage.
+
 ## 🔧 Development
 
 ### Local Development
 
 ```bash
-# Clone the repository
 git clone https://github.com/Rishang/cloudutil.git
 cd cloudutil
 
-# Install in development mode
+# Install dependencies (creates .venv when using uv)
 uv sync
 
-# Activate the virtual environment
-poetry shell
+# Run the CLI (console script from pyproject)
+uv run cu --help
 
-# Run the CLI
-cd src/cloudutil && python3 cli.py
+# Or activate the venv and run cu directly
+source .venv/bin/activate
+cu --help
 ```
 
 ---
