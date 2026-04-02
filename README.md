@@ -12,6 +12,12 @@ CLI `cu` is a wrapper for most common AWS and Azure cloud operations with intera
 pip install -U git+https://github.com/Rishang/cloudutil.git
 ```
 
+OR Build from source:
+
+```bash
+cd /tmp && git clone https://github.com/Rishang/cloudutil.git && cd cloudutil && uv build && pip install ./dist/cloudutil-*.tar.gz
+```
+
 ## 📚 Table of Contents
 
 - [☁️ CloudUtil](#️-cloudutil)
