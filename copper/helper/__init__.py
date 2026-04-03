@@ -1,13 +1,13 @@
 """cloudutil.helper — shared utilities re-exported for convenience."""
 
-from cloudutil.helper.fzf_view import FzfView
+from copper.helper.fzf_view import FzfView
 
-# Re-export the legacy helpers that existing modules import from cloudutil.helper
+# Re-export the legacy helpers that existing modules import from copper.helper
 # so nothing breaks while callers are migrated to the new package layout.
-from cloudutil.utils import ShellRunner, shell, resolve_env_variable
+from copper.utils import ShellRunner, shell, resolve_env_variable
 
-from cloudutil.utils import shell as _shell
-from cloudutil.utils import console as _console
+from copper.utils import shell as _shell
+from copper.utils import console as _console
 from typing import List as _List
 
 

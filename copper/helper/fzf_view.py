@@ -7,7 +7,7 @@ import sys
 import subprocess
 from abc import ABC, abstractmethod
 from typing import Generic, List, Optional, TypeVar
-from cloudutil.utils import console
+from copper.utils import console
 from rich.console import Console
 
 # T is the domain object produced by list_items() and consumed by display_item().

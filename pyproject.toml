@@ -1,7 +1,7 @@
 [project]
-name = "cloudutil"
+name = "copper"
 version = "0.1.0"
-description = "AWS utilities for generating console login URLs via STS GetFederationToken and SSM parameter management"
+description = "Cu - The conductive element for multi-cloud operations. Interactive CLI for AWS, Azure, Kubernetes with fuzzy search superpowers."
 readme = "README.md"
 requires-python = ">=3.12,<=3.15"
 dependencies = [
@@ -27,7 +27,7 @@ build-backend = "setuptools.build_meta"
 package = true
 
 [tool.setuptools.packages.find]
-include = ["cloudutil*"]
+include = ["copper*"]
 
 [project.scripts]
-cu = "cloudutil.cli:app"
+cu = "copper.cli:app"

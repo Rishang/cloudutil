@@ -5,8 +5,8 @@ from pathlib import Path
 import typer
 from rich import print
 
-from cloudutil.sql.apply import apply_postgres_config, validate_postgres_config
-from cloudutil.utils import logger
+from copper.sql.apply import apply_postgres_config, validate_postgres_config
+from copper.utils import logger
 
 app = typer.Typer(
     pretty_exceptions_enable=False,
@@ -101,7 +101,7 @@ def validate_config(
         validate_postgres_config(config_path=config_file)
 
         # Re-build for display only (no connection made)
-        from cloudutil.sql.modules.postgres import PostgreSQLBuilder
+        from copper.sql.modules.postgres import PostgreSQLBuilder
 
         cfg = PostgreSQLBuilder().from_yaml(config_file).build().config
 

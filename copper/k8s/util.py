@@ -1,5 +1,5 @@
 import json
-from cloudutil.utils import shell
+from copper.utils import shell
 
 
 def _kubectl_json(args: list[str]) -> dict:

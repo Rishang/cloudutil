@@ -7,8 +7,8 @@ import os
 
 import typer
 from rich.rule import Rule
-from cloudutil.utils import console
-from cloudutil.os_utils.yaml_diff import (
+from copper.utils import console
+from copper.os_utils.yaml_diff import (
     DiffCheckConfig,
     compare_pair,
     extract,

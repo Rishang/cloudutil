@@ -7,11 +7,11 @@ from typing import Optional
 
 import typer
 
-from cloudutil.helper import fzf_select
-from cloudutil.k8s.util import _list_kube_contexts
-from cloudutil.k8s.configmap import view_configmaps_with_fzf
-from cloudutil.k8s.secrets import view_secrets_with_fzf
-from cloudutil.utils import console
+from copper.helper import fzf_select
+from copper.k8s.util import _list_kube_contexts
+from copper.k8s.configmap import view_configmaps_with_fzf
+from copper.k8s.secrets import view_secrets_with_fzf
+from copper.utils import console
 
 app = typer.Typer(
     pretty_exceptions_enable=False,

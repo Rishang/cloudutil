@@ -6,7 +6,7 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from cloudutil.utils import resolve_env_variable
+from copper.utils import resolve_env_variable
 
 
 class ProviderConfig(BaseModel):

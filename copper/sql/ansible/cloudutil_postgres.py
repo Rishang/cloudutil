@@ -8,7 +8,7 @@ from ansible.module_utils.basic import AnsibleModule
 
 try:
     import yaml
-    from cloudutil.sql.modules.postgres import PostgreSQLBuilder
+    from copper.sql.modules.postgres import PostgreSQLBuilder
 
     HAS_DEPS = True
 except ImportError:

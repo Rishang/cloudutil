@@ -1,31 +1,114 @@
-# ☁️ CloudUtil
+<div align="center">
 
-CLI `cu` is a wrapper for most common AWS and Azure cloud operations with interactive selection and beautiful output.
+```
+  ██████╗ ██████╗ ██████╗ ██████╗ ███████╗██████╗ 
+ ██╔════╝██╔═══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗
+ ██║     ██║   ██║██████╔╝██████╔╝█████╗  ██████╔╝
+ ██║     ██║   ██║██╔═══╝ ██╔═══╝ ██╔══╝  ██╔══██╗
+ ╚██████╗╚██████╔╝██║     ██║     ███████╗██║  ██║
+  ╚═════╝ ╚═════╝ ╚═╝     ╚═╝     ╚══════╝╚═╝  ╚═╝
+```
+
+# 🔶 Copper
+
+### *The Conductive Element for Multi-Cloud Operations*
+
+**Cu — Interactive CLI for AWS, Azure, Kubernetes with fuzzy search superpowers**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![AWS](https://img.shields.io/badge/AWS-Cloud-orange.svg)](https://aws.amazon.com/)
-[![Azure](https://img.shields.io/badge/Azure-Cloud-blue.svg)](https://azure.microsoft.com/)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-Cloud-blue.svg)](https://kubernetes.io/)
+[![AWS](https://img.shields.io/badge/AWS-FF9900?logo=amazonaws&logoColor=white)](https://aws.amazon.com/)
+[![Azure](https://img.shields.io/badge/Azure-0078D4?logo=microsoftazure&logoColor=white)](https://azure.microsoft.com/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
+
+[Features](#-features) • [Quick Start](#-quick-start) • [Installation](#-installation) • [Usage](#-usage) • [Documentation](#-command-reference)
+
+</div>
+
+---
+
+## 🚀 Quick Start
 
 ```bash
-pip install -U git+https://github.com/Rishang/cloudutil.git
+# Install Copper
+pip install -U git+https://github.com/Rishang/copper.git
+
+# Search AWS SSM parameters interactively
+cu aws ssm-parameters --prefix /app/
+
+# Browse Kubernetes secrets with fuzzy finding
+cu k secrets --all-namespaces
+
+# Generate AWS console login URL with custom policy
+cu aws login -f ./my-policy.json
+
+# Share secrets securely via Password Pusher
+cu pwpush send --note "API credentials" --days 7
 ```
 
-OR Build from source:
+> **💡 Pro Tip:** Every command supports interactive `fzf` selection — just type, filter, and select!  
+> **🔶 Fun Fact:** `cu` is the atomic symbol for Copper — a highly conductive element, just like this tool connects you to all your clouds!
 
+## 🎯 Why Copper?
+
+<table>
+<tr>
+<td width="50%">
+
+### 😫 Before Copper
 ```bash
-cd /tmp && git clone https://github.com/Rishang/cloudutil.git && cd cloudutil && uv build && pip install ./dist/cloudutil-*.tar.gz
+# Multiple AWS CLI commands
+aws ssm get-parameters-by-path \
+  --path /app/ --recursive | jq ...
+
+# Manual filtering and parsing
+aws secretsmanager list-secrets | \
+  grep "prod" | ...
+
+# Complex kubectl queries
+kubectl get secrets -A -o json | \
+  jq '.items[] | ...' 
 ```
+
+</td>
+<td width="50%">
+
+### 🎉 With Copper
+```bash
+# Interactive fuzzy search
+cu aws ssm-parameters --prefix /app/
+# → Opens fzf, select multiple, done!
+
+# Beautiful formatted output
+cu aws secrets --filter prod/
+# → Multi-select, auto JSON parse
+
+# Simple, interactive
+cu k secrets -A
+# → One command, all namespaces
+```
+
+</td>
+</tr>
+</table>
+
+**Key Benefits:**
+- ⚡ **10x Faster** — Interactive selection beats typing complex commands
+- 🎯 **Fuzzy Search** — Find what you need without exact names
+- 🎨 **Beautiful Output** — Formatted JSON, colored output, clear feedback
+- 🔄 **Multi-Cloud** — AWS, Azure, Kubernetes in one unified CLI
+- 🛠️ **DevOps Friendly** — Built for daily cloud operations
+
+---
 
 ## 📚 Table of Contents
 
-- [☁️ CloudUtil](#️-cloudutil)
-  - [📚 Table of Contents](#-table-of-contents)
-  - [✨ Features](#-features)
-  - [📦 Installation](#-installation)
-    - [Requirements](#requirements)
-  - [🚀 Usage](#-usage)
+- [🎯 Why Copper?](#-why-copper)
+- [✨ Features](#-features)
+- [🚀 Quick Start](#-quick-start)
+- [📦 Installation](#-installation)
+  - [Requirements](#requirements)
+- [🚀 Usage](#-usage)
     - [Top-level commands](#top-level-commands)
     - [AWS Operations](#aws-operations)
       - [Console Login](#console-login)
@@ -55,54 +138,132 @@ cd /tmp && git clone https://github.com/Rishang/cloudutil.git && cd cloudutil &&
 
 ## ✨ Features
 
-- 🚀 **Interactive AWS Console Login** - Generate federated console URLs with a scoped IAM policy file
-- 🔐 **SSM Parameter Management** - Search and retrieve parameters with fuzzy finding
-- 📡 **SSM Instance Connections** - Direct SSH and port forwarding through Systems Manager
-- 🔑 **Secrets Manager Integration** - Interactive secret browsing with JSON formatting
-- 🎯 **Fuzzy Selection** - Powered by `fzf` for lightning-fast interactive selection
-- 🎨 **Beautiful Output** - Rich terminal interface with colors and formatting
-- ⚡ **Profile & Region Support** - Seamless switching between AWS profiles and regions (where supported per command)
-- 🐍 **SQL Database Management** - Declarative PostgreSQL configuration via YAML (`validate`, `execute`, `init`)
-- 🎛️ **Kubernetes Operations** - Interactive Kubernetes secrets and ConfigMaps browsing via `kubectl`
-- 🧰 **OS Utils** - YAML diff checker for cross-file config comparisons using JMESPath
-- 🗂️ **Taskfile Passthrough** - Run local Taskfile tasks via `cu task ...` with interactive terminal support
-- 🔐 **Password Pusher Integration** - Configure Password Pusher, share secrets, and generate strong passwords
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### ☁️ Cloud Platforms
+
+#### 🟠 AWS Operations
+- **🔐 Console Login** — Generate federated URLs with custom IAM policies
+- **📦 SSM Parameters** — Interactive parameter store browsing
+- **💻 EC2 SSM Sessions** — Direct SSH & port forwarding
+- **🔑 Secrets Manager** — Browse & retrieve secrets with auto JSON parsing
+- **🔓 Decode Auth Messages** — Decode IAM authorization failures
+
+#### 🔵 Azure Operations
+- **🗝️ Key Vault Secrets** — Interactive secret management
+- **🎯 Filter & Search** — Quick name-based filtering
+
+#### ⎈ Kubernetes
+- **🔒 Secrets Browser** — Per-key selection with auto base64 decode
+- **📋 ConfigMaps** — Interactive ConfigMap exploration
+- **🔄 Context Switching** — Quick cluster context changes
+
+</td>
+<td width="50%" valign="top">
+
+### 🛠️ DevOps Tools
+
+#### 🗄️ SQL Management
+- **📝 YAML Config** — Declarative PostgreSQL management
+- **✅ Validation** — Pre-flight config checks
+- **🚀 Execution** — Apply database configurations
+
+#### 🔐 Security Tools
+- **🔗 Password Pusher** — Secure temporary secret sharing
+- **🎲 Password Generator** — Strong random password generation
+- **⏰ Expiration Control** — Time & view-based limits
+
+#### 🧰 Utilities
+- **📊 YAML Diff** — Cross-file config comparison via JMESPath
+- **📜 Shell History** — Fuzzy search through command history
+- **📋 Taskfile Integration** — Direct Taskfile task execution
+
+</td>
+</tr>
+</table>
+
+### 🎯 Core Superpowers
+
+| Feature | Description |
+|---------|-------------|
+| ⚡ **Fuzzy Selection** | `fzf`-powered interactive selection — type to filter, Tab to multi-select |
+| 🎨 **Beautiful Output** | Rich formatting, syntax highlighting, structured JSON display |
+| 🔄 **Multi-Profile** | Seamless AWS profile & region switching |
+| 🚀 **Zero Config** | Works with existing AWS/Azure/kubectl configurations |
+| 📦 **Batch Operations** | Multi-select support for bulk operations |
 
 ## 📦 Installation
 
+### Option 1: Direct Install (Recommended)
 ```bash
-pip install -U git+https://github.com/Rishang/cloudutil.git
+pip install -U git+https://github.com/Rishang/copper.git
 ```
 
-OR
-
+### Option 2: Build from Source
 ```bash
-git clone https://github.com/Rishang/cloudutil.git && cd cloudutil && uv build && pip install ./dist/cloudutil-*.tar.gz
+git clone https://github.com/Rishang/copper.git
+cd copper
+uv build
+pip install ./dist/copper-*.tar.gz
 ```
 
 ### Requirements
 
-- Python 3.12+
-- `fzf` for interactive selection
-- [Only for AWS operations] AWS CLI configured with credentials
-- [Only for Azure operations] Azure CLI (`az login` must be run primarily)
-- [Only for Kubernetes operations] `kubectl` configured with access to your target cluster
-- [Only for Taskfile operations] [Taskfile](https://taskfile.dev/) installed and configured
-- [Only for Password Pusher operations] [Password Pusher](https://pwpush.com/) configured
+<details>
+<summary><b>📋 Core Requirements (click to expand)</b></summary>
 
+| Requirement | Purpose | Install |
+|-------------|---------|---------|
+| **Python 3.12+** | Runtime | [python.org](https://www.python.org/downloads/) |
+| **fzf** | Interactive selection | `brew install fzf` / `apt install fzf` |
+
+</details>
+
+<details>
+<summary><b>☁️ Cloud Platform Requirements (optional)</b></summary>
+
+| Platform | Requirement | Setup |
+|----------|-------------|-------|
+| **AWS** | AWS CLI + credentials | [Configure AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html) |
+| **Azure** | Azure CLI + login | Run `az login` |
+| **Kubernetes** | kubectl + context | [Install kubectl](https://kubernetes.io/docs/tasks/tools/) |
+
+</details>
+
+<details>
+<summary><b>🛠️ Optional Tools</b></summary>
+
+| Tool | Purpose | Link |
+|------|---------|------|
+| **Taskfile** | Task automation | [taskfile.dev](https://taskfile.dev/) |
+| **Password Pusher** | Secret sharing | [pwpush.com](https://pwpush.com/) |
+
+</details>
+
+### Quick Setup
 
 ```bash
+# Install Copper
+pip install -U git+https://github.com/Rishang/copper.git
+
 # Install fzf (if not already installed)
 # macOS
 brew install fzf
 
-# Ubuntu/Debian
+# Linux (Ubuntu/Debian)
 sudo apt install fzf
 
-# Or follow: https://github.com/junegunn/fzf#installation
+# Verify installation
+cu --help
 ```
 
 ## 🚀 Usage
+
+---
+
+## 🎮 Command Overview
 
 ### Top-level commands
 
@@ -290,7 +451,7 @@ cu aws login -f ./s3-read-only.json
 
 ##### Environment Variables
 
-CloudUtil respects standard AWS environment variables:
+Copper respects standard AWS environment variables:
 
 ```bash
 export AWS_PROFILE=my-profile
@@ -478,7 +639,7 @@ cu os history
 
 ### Taskfile Operations
 
-Run [Taskfile](https://taskfile.dev/) tasks through CloudUtil. `cu task` replaces the current process with `task`, forwarding extra arguments for full interactive TTY behavior.
+Run [Taskfile](https://taskfile.dev/) tasks through Copper. `cu task` replaces the current process with `task`, forwarding extra arguments for full interactive TTY behavior.
 
 Default Taskfile: `~/.config/cu/Taskfile.yml`. Default directory: current working directory.
 
@@ -550,8 +711,8 @@ Run `cu --help` and `cu <group> --help` for live usage.
 ### Local Development
 
 ```bash
-git clone https://github.com/Rishang/cloudutil.git
-cd cloudutil
+git clone https://github.com/Rishang/copper.git
+cd copper
 
 # Install dependencies (creates .venv when using uv)
 uv sync
@@ -567,10 +728,21 @@ cu --help
 ---
 
 <div align="center">
-  <p>Made with ❤️ for the Cloud community</p>
-  <p>
-    <a href="https://github.com/Rishang/cloudutil/issues">Report Bug</a>
-    ·
-    <a href="https://github.com/Rishang/cloudutil/issues">Request Feature</a>
-  </p>
+
+### 🔶 Copper — Highly Conductive Cloud Operations
+
+<p>Made with ❤️ for the Cloud & DevOps community</p>
+
+<p>
+  <a href="https://github.com/Rishang/copper/issues">🐛 Report Bug</a>
+  ·
+  <a href="https://github.com/Rishang/copper/issues">✨ Request Feature</a>
+  ·
+  <a href="https://github.com/Rishang/copper/discussions">💬 Discussions</a>
+</p>
+
+<p>
+  <sub>Cu — Atomic number 29 — Connecting your clouds since 2024</sub>
+</p>
+
 </div>

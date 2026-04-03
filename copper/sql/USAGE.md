@@ -37,7 +37,7 @@ users:
 ### 2. Execute Configuration
 
 ```python
-from cloudutil.sql.modules import PostgreSQLBuilder
+from copper.sql.modules import PostgreSQLBuilder
 
 provider = PostgreSQLBuilder().from_yaml("config.yaml").build()
 with provider:
@@ -112,7 +112,7 @@ cu sql init
 
 ## Ansible
 
-Install `cloudutil` into the Python environment used by Ansible, then use the **`cloudutil_postgres`** module (see `cloudutil/sql/ansible/cloudutil_postgres.py`).
+Install `copper` into the Python environment used by Ansible, then use the **`cloudutil_postgres`** module (see `copper/sql/ansible/cloudutil_postgres.py`).
 
 ```yaml
 - name: Apply SQL config from file
@@ -186,7 +186,7 @@ spec:
     spec:
       containers:
       - name: sql-setup
-        image: cloudutil:latest
+        image: copper:latest
         command: ["cu", "sql", "execute", "--config-file", "/config/config.yaml"]
         env:
         - name: POSTGRES_PASSWORD

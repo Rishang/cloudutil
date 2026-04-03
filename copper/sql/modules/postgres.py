@@ -8,7 +8,7 @@ import yaml
 from psycopg2 import sql
 from pydantic import BaseModel
 
-from cloudutil.utils import logger
+from copper.utils import logger
 from .base import (
     BaseSQLProvider,
     CustomSQLQuery,

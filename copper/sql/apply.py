@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from cloudutil.sql.modules.postgres import PostgreSQLBuilder
+from copper.sql.modules.postgres import PostgreSQLBuilder
 
 
 def _resolve_path(config_path: str | Path) -> Path:

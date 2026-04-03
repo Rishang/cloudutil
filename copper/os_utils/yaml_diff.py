@@ -17,7 +17,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from cloudutil.utils import console
+from copper.utils import console
 
 # ── Types ──────────────────────────────────────────────────────────────────────
 

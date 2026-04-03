@@ -5,7 +5,7 @@ from typing import Optional
 
 import typer
 
-from cloudutil.utils import console
+from copper.utils import console
 from .secrets import search_secrets_with_fzf
 
 app = typer.Typer(
